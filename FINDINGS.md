@@ -92,3 +92,33 @@ worked on the VM. Cause: a trailing character came along with the paste.
 Found by comparing lengths and character classes without printing the
 value. Fix: the README's setup step says to paste the token whole and
 nothing more.
+
+## Setting up the cloud Mac (MacStadium, macOS 27.2, 2026-11-05)
+
+### A pasted `\n` arrived as `|n` and broke sshd
+
+Symptom: after writing a keys-only `sshd_config.d` file with
+`printf '…\n…'`, every SSH connection was reset. Cause: the backslashes
+turned into `|` between the chat and Kevin's terminal, so the file was one
+invalid line and sshd (started per connection on macOS) exited each time;
+`sudo /usr/sbin/sshd -t` named the line. Fix: a heredoc with no
+backslashes, and an SSH session kept open until a new one connects. Rule:
+commands for Kevin to paste carry no backslashes.
+
+### mosh couldn't find `mosh-server`
+
+Symptom: "command not found: mosh-server". Cause: mosh starts the server
+through a non-interactive SSH command, whose zsh reads `~/.zshenv` but not
+`~/.zprofile`, where Homebrew's installer puts its PATH line. Fix:
+`eval "$(/opt/homebrew/bin/brew shellenv)"` in `~/.zshenv`.
+
+### "Keychain Not Found" on a fresh MacStadium account
+
+Symptom: Steinberg's helper couldn't store its sign-in. Cause: the
+provisioned account had no login keychain. Fix: Restore to Defaults, with
+the account's current password, so auto-login unlocks it.
+
+### MediaBay "cannot be reached" on Dorico's first launch
+
+Symptom: right after the Local Network prompts for Dorico's components.
+Fix: none needed; gone after a restart.

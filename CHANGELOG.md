@@ -14,6 +14,10 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
 - `scripts/record.ts` and `scripts/record-two.ts` record Dorico's Remote
   Control messages; the tests replay them through a fake Dorico.
 
+### Changed
+
+- `MAC_BENCH_URL` defaults to the cloud Mac (`mac-bench` on the tailnet).
+
 ### Safety
 
 - A job only ever closes a project it has proved its own (its PDF landed
