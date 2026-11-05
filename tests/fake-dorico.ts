@@ -28,6 +28,8 @@ export class FakeDorico {
 	readonly projects = new Map<number, Project>();
 	active: number | null = null;
 	readonly commandsReceived: string[] = [];
+	/** Called right after an import adds its project (and its status is pushed). */
+	onOpened: ((id: number) => void) | null = null;
 	/** Every message sent to a client, in order. */
 	readonly sent: Record<string, unknown>[] = [];
 	private nextId = 35;
@@ -184,8 +186,9 @@ export class FakeDorico {
 				ok();
 				const file = params.get("File") ?? "";
 				setTimeout(() => {
-					this.add(file);
+					const id = this.add(file);
 					this.push(this.activeFields());
+					this.onOpened?.(id);
 				}, this.opts.openDelayMs);
 				return;
 			}

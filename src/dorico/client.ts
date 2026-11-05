@@ -18,7 +18,11 @@ export type ClientOptions = {
 	allowWaitMs?: number;
 };
 
-type Waiter = { pred: (s: Status) => boolean; resolve: (s: Status) => void };
+type Waiter = {
+	pred: (s: Status) => boolean;
+	resolve: (s: Status) => void;
+	reject: (e: Error) => void;
+};
 type Pending = { resolve: (m: Incoming) => void; reject: (e: Error) => void };
 
 const REPLY_MS = 10_000;
@@ -76,6 +80,10 @@ export class DoricoClient {
 				resolve: (s) => {
 					clearTimeout(timer);
 					resolve(s);
+				},
+				reject: (e) => {
+					clearTimeout(timer);
+					reject(e);
 				},
 			};
 			const timer = setTimeout(() => {
@@ -151,6 +159,8 @@ export class DoricoClient {
 		this.state = "not running";
 		this.version = null;
 		for (const p of this.pending.splice(0)) p.reject(new DoricoError(reason));
+		for (const w of this.waiters) w.reject(new DoricoError(reason));
+		this.waiters.clear();
 	}
 
 	private receive(m: Incoming): void {
