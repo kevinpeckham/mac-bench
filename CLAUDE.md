@@ -48,8 +48,13 @@ bun run helper                             # on the Mac (launchd runs this)
 
 ## The Mac
 
-Kevin's laptop for now (`kevins-macbook-pro-2021` on the tailnet); a cloud
-Mac later, which changes only `MAC_BENCH_URL`. While building, Claude may
-reach it with
-`ssh -i ~/.ssh/mac-bench_ed25519 -o IdentitiesOnly=yes kevinpeckham@kevins-macbook-pro-2021`
-(Bun is `~/.bun/bin/bun` there: non-interactive shells lack it on PATH).
+The cloud Mac since 2026-11-05: a MacStadium M2.XL in Dublin, macOS 27.2,
+`mac-bench` on the tailnet (`MAC_BENCH_URL`'s default), user
+`administrator`, auto-login on, Dorico Elements 6.2.31 open with Remote
+Control on port 4560. Claude reaches it with
+`ssh -i ~/.ssh/mac-bench_ed25519 -o IdentitiesOnly=yes administrator@mac-bench`
+(no sudo: give Kevin root commands to run, with no backslashes in them,
+see FINDINGS; Bun is `~/.bun/bin/bun`). SSH accepts keys only. Plan and
+status: `docs/cloud-mac-plan.md`. Kevin's MacBook
+(`kevins-macbook-pro-2021`) also still runs the helper: point
+`MAC_BENCH_URL` at it to use it.

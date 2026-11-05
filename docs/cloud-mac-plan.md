@@ -39,7 +39,7 @@ Stem Shovel's DAW tests (Ableton Live, Logic Pro) beside Dorico. Research:
   on Apple silicon (Steinberg's and Ableton's compatibility pages); some
   forum reports of crashes on 27.0/27.0.1. User `administrator`.
   Still to ask MacStadium: whether updates can be held; a pause that
-  keeps the disk; whether the Mac has an audio device; a move to a US
+  keeps the disk; a move to a US
   M4.L when one is free (model changes carry no penalty, they say).
 - [x] Checked: `forceBypassScreenCaptureAlert` (Restrictions,
   `com.apple.applicationaccess`) is macOS 15.1+, not supervised-only,
@@ -47,10 +47,27 @@ Stem Shovel's DAW tests (Ableton Live, Logic Pro) beside Dorico. Research:
   Enrollment, per Apple's device-management schema. So a whole-Mac
   enrollment approved by hand works: no wipe, nothing needed from
   MacStadium.
-- [ ] First access (Kevin, over SSH): change the password (1Password),
-  Homebrew, Tailscale as a system daemon (`brew services`, hostname
-  `mac-bench`), mosh (allow `mosh-server` in the firewall if it's on),
-  the VM's restricted key. Then close SSH from the internet.
+- [x] First access (2026-11-05): password changed (1Password), Homebrew,
+  Tailscale as a system daemon (hostname `mac-bench`, 100.77.135.13),
+  mosh (`brew shellenv` in `~/.zshenv`, so non-interactive shells find
+  `mosh-server`; the firewall is off), Kevin's and the VM's keys. SSH is
+  keys only (`/etc/ssh/sshd_config.d/100-keys-only.conf`), still open on
+  the public address as the way back in if Tailscale fails.
+- [x] Checked on the Mac: FileVault off, screen sharing on (reach it as
+  `vnc://mac-bench` over Tailscale), sleep off, and a real audio device
+  ("Mac mini Speakers").
+- [x] Auto-login as `administrator`; a fresh login keychain ("Keychain
+  Not Found" → Restore to Defaults); a restart came back logged in with
+  Dorico reopened.
+- [x] Dorico Elements 6.2.31 installed and activated (second Steinberg
+  activation); Local Network allowed for Dorico, VSTAudioEngine6 and
+  MediaBay, refused for the Download Assistant; no passwords saved in
+  the keychain; Remote Control on, port 4560.
+- [x] Bun 1.4.4, mac-bench cloned (tests 40/40 there), `.env.local`
+  (mode 600), the launchd agent; Kevin clicked Allow. Dorico checks run
+  from the VM against it (`MAC_BENCH_URL` default now `mac-bench`).
+  Its PDFs are A4 (the Mac's region is Ireland); set Dorico's default
+  paper size to Letter to match the MacBook if wanted.
 - [ ] Choose an MDM: research ([docs/research/2026-11-05-mdm.md](research/2026-11-05-mdm.md))
   recommends **SimpleMDM** (about $3 a month for one Mac, 30-day trial):
   custom profiles, Apps and Books assigned to the device, enrollment by
