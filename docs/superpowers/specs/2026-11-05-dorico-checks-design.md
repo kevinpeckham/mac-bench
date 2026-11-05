@@ -119,7 +119,19 @@ For each file in a job:
 
 Each wait has a timeout; on timeout the job fails with the step's name and
 the helper still tries step 4 for any project it opened, so Dorico is left
-clean. Job folders are deleted after a successful job and kept (for
+clean.
+
+**Amended 2026-11-05, after the final review and a recording with two
+projects open (`tests/recordings/two-projects.log`):** a pushed status
+leaves out `hasScore` while it stays true, Dorico's project IDs only grow,
+and `Window.SwitchToLayout` answers `kOK` but switches nothing. So step 2
+takes the first project with an ID above any seen on the connection; step
+3 has no switch back (a job whose project isn't in front stops at "focus")
+and checks focus again right after the export; and step 4 closes a project
+only once it has proved itself the job's (its PDF landed in the job's
+folder) and is in front. Anything less leaves the project open and says
+so, rather than "Dorico is left clean": a stray project is a nuisance, a
+closed one of Kevin's is lost work. Job folders are deleted after a successful job and kept (for
 inspection) after a failure, pruned after a few days.
 
 Endpoints (my call; small, JSON in and out):
