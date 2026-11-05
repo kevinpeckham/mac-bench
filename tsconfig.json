@@ -13,5 +13,5 @@
 		"types": ["bun"],
 		"lib": ["ESNext", "DOM"]
 	},
-	"include": ["src", "tests", "scripts"]
+	"include": ["src", "tests", "scripts", "env.d.ts"]
 }
