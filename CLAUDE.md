@@ -54,7 +54,9 @@ The cloud Mac since 2026-11-05: a MacStadium M2.XL in Dublin, macOS 27.2,
 Control on port 4560. Claude reaches it with
 `ssh -i ~/.ssh/mac-bench_ed25519 -o IdentitiesOnly=yes administrator@mac-bench`
 (no sudo: give Kevin root commands to run, with no backslashes in them,
-see FINDINGS; Bun is `~/.bun/bin/bun`). SSH accepts keys only. Plan and
+see FINDINGS; Bun is `~/.bun/bin/bun`). MuseScore 4.7.6 is a Homebrew cask (`brew install --cask
+musescore`, 2026-11-05): `mscore` converts headless, after
+`eval "$(/opt/homebrew/bin/brew shellenv)"`. SSH accepts keys only. Plan and
 status: `docs/cloud-mac-plan.md`. Kevin's MacBook
 (`kevins-macbook-pro-2021`) also still runs the helper: point
 `MAC_BENCH_URL` at it to use it.
