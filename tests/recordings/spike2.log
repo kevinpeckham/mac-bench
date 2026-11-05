@@ -1,0 +1,63 @@
+[15:45:06] <- {"message":"response","code":"kConnected"}
+[15:45:06] handshake {"message":"response","code":"kConnected"}
+[15:45:06] -> File.Open?File=/Users/kevinpeckham/dorico-spike/horns.musicxml
+   status {"message":"status","hasScore":false,"canUndo":false,"hasSelection":false,"inPlayback":false,"isRecording":false,"inStepTimeInput":false,"notReadOnly":true,"noteInputMode":"kOverwrite","tabBarShown":false,"toolbarShown":true,"leftPanelShown":true,"rightPanelShown":false,"bottomPanelShown":false,"allPanelsHidden":false,"fixedTempoMode":false,"showTimeTrack":true,"showChordTrack":true,"showVideoTrack":false,"showMarkerTrack":false,"clickEnabled":false,"cycleEnabled":false,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","signpostsSuppressed":false,"dragHandlesViewState":"kSelected","showBarNumbersInPageView":false,"showBarNumbersInGalleyView":true,"showBarNumbersInFillView":true,"showImplicitRestsInGrey":false,"showCuesInGrey":false,"showDivisiUnisonInGrey":false,"showCondensedMusicInGrey":false,"showMutedEventsInGrey":true,"showHiddenNoteheadsInGrey":true,"attachmentLinesShown":true,"highlightCues":false,"highlightSlashRegions":true,"highlightBarRepeatRegions":true,"highlightChordSymbolVisibilityRegions":true,"highlightMIDITriggerRegions":true,"showSystemTrack":true,"showComments":true,"showPageNumbersOverlay":false,"showCautionaryAccidentals":false,"showAccidentalsWithForcedVisibility":false,"showContradictoryAccidentals":false,"showCutawayStaveLines":true,"windowMode":"kWriteMode","insertActive":false,"activePlayModeTool":"kObjectSelection","toolType":"kMarqueeSelect","zoomPercent":"200","noteInputActive":false,"videoWindowShown":false,"mixerShown":false,"transportShown":false,"fullScreen":false,"activatedForPlayback":true,"duration":"","rhythmDots":"0","articulationAccent":false,"articulationStaccato":false,"articulationMarcato":false,"articulationTenuto":false,"articulationStaccatissimo":false,"articulationStaccatoTenuto":false,"articulationStressed":false,"articulationUnstressed":false,"accidental":"","restMode":false,"graceNoteSlashed":false,"graceNoteUnslashed":false,"selectedEventType":"kNone","condensingEnabled":false}
+[15:45:06] <- {"message":"response","code":"kOK"}
+   status {"message":"status","noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","tabBarShown":false,"selectedEventType":"kNone"}
+   status {"message":"status","toolbarShown":true,"leftPanelShown":true,"rightPanelShown":false,"bottomPanelShown":false,"allPanelsHidden":false,"selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"hasScore":true,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"toolbarShown":true,"leftPanelShown":true,"rightPanelShown":false,"bottomPanelShown":false,"allPanelsHidden":false,"selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+[15:45:14]    status {"hasScore":true,"windowMode":"kWriteMode","openScore":34}
+[15:45:15] -> Print.ExportCurrentLayoutAsPDF
+[15:45:15] <- {"message":"response","code":"kOK"}
+[15:48:56] B1 PDFs after export in Write mode []
+[15:48:56] -> Window.SwitchMode?WindowMode=kPrintMode
+[15:48:56] <- {"message":"response","code":"kOK"}
+[15:48:59]    status {"hasScore":true,"windowMode":"kWriteMode","openScore":34}
+[15:49:00] -> Print.ExportCurrentLayoutAsPDF
+[15:49:00] <- {"message":"response","code":"kOK"}
+[15:49:48] B2 PDFs after export in Print mode []
+[15:49:48] -> File.Save?File=/Users/kevinpeckham/dorico-spike/scratch/horns.dorico
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"toolbarShown":true,"leftPanelShown":true,"rightPanelShown":true,"bottomPanelShown":false,"allPanelsHidden":false,"selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"windowMode":"kPrintMode","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"noteInputMode":"kOverwrite","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+   status {"message":"status","activeOpenScoreID":34,"activeViewContainerID":33,"rhythmicGridResolutionValue":"kQuaver","noteInputPitchModeValue":"kWrittenPitch","filterBehaviour":"kSelect","pagePositionPolicy":"kSpreadHorizontal","noteColoursType":"kColourNotesOutOfRange","toolType":"kMarqueeSelect","zoomPercent":"200","selectedEventType":"kNone"}
+[15:49:49] <- {"message":"response","code":"kOK"}
+[15:49:52] C  saved project exists false
+[15:49:53] -> Print.ExportCurrentLayoutAsPDF
+[15:49:53] <- {"message":"response","code":"kOK"}
+[15:50:41] C  PDFs after export of the saved project ["/Users/kevinpeckham/dorico-spike/01 - Full score - Horn Test.pdf"]
+[15:50:41] -> File.CloseProject?Save=false
+[15:50:41] <- {"message":"response","code":"kOK"}
+[15:50:45]    status {"hasScore":true,"windowMode":"kPrintMode","openScore":34}
+[15:50:45] D  closed without a dialog? check the screen for a dialog
