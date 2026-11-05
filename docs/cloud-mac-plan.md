@@ -31,15 +31,26 @@ Stem Shovel's DAW tests (Ableton Live, Logic Pro) beside Dorico. Research:
 - [x] Apple Business Manager application submitted (Kevin, 2026-11-05).
   **Skip domain verification** for now: verifying `lightningjar.com`
   asks every personal Apple ID on that domain to change its address.
-- [ ] Apple approves the application (a few days; Apple may call the
-  verification contact).
-- [ ] Order the MacStadium Mac (Kevin). Ask MacStadium: which macOS
-  versions they install and whether updates can be held; whether their
-  Macs can be enrolled in an MDM; whether there is a pause or hold that
-  keeps the disk; whether the Mac exposes an audio device.
-- [ ] Check before relying on them: that the screen-recording bypass
-  setting works on a Mac enrolled by hand (user-approved MDM, not
-  Automated Device Enrollment); that MacStadium Macs can enrol.
+- [x] Apple approved the application (2026-11-05).
+- [x] Ordered from MacStadium (2026-11-05): **M2.XL** (M2 Pro, 32 GB,
+  2 TB, $349 a month) in **Dublin**, the only region with stock; no
+  M4.L was offered. It came with **macOS 27.2** (no choice at order).
+  Dorico 6.2.31 and Ableton Live 12 are listed as supported on macOS 27
+  on Apple silicon (Steinberg's and Ableton's compatibility pages); some
+  forum reports of crashes on 27.0/27.0.1. User `administrator`.
+  Still to ask MacStadium: whether updates can be held; a pause that
+  keeps the disk; whether the Mac has an audio device; a move to a US
+  M4.L when one is free (model changes carry no penalty, they say).
+- [x] Checked: `forceBypassScreenCaptureAlert` (Restrictions,
+  `com.apple.applicationaccess`) is macOS 15.1+, not supervised-only,
+  MDM-only (`allowmanualinstall: false`) and refused under User
+  Enrollment, per Apple's device-management schema. So a whole-Mac
+  enrollment approved by hand works: no wipe, nothing needed from
+  MacStadium.
+- [ ] First access (Kevin, over SSH): change the password (1Password),
+  Homebrew, Tailscale as a system daemon (`brew services`, hostname
+  `mac-bench`), mosh (allow `mosh-server` in the firewall if it's on),
+  the VM's restricted key. Then close SSH from the internet.
 - [ ] Choose an MDM (free to a few dollars a month for one Mac).
 - [ ] Write the setup script in this repo: Homebrew bundle (Tailscale as
   a system daemon, BlackHole, Bun, git), clone, `.env.local` from
