@@ -30,6 +30,11 @@ const REPLY_MS = 10_000;
 export class DoricoClient {
 	state: ClientState = "not running";
 	version: { variant: string; number: string } | null = null;
+	/**
+	 * The highest project ID seen on this connection. Dorico's IDs only grow
+	 * (two-projects.log), so a project newer than this is one just opened.
+	 */
+	highestScoreID = -1;
 	private ws: WebSocket | null = null;
 	private started = false;
 	private retry: ReturnType<typeof setTimeout> | null = null;
@@ -107,6 +112,9 @@ export class DoricoClient {
 			const timer = setTimeout(() => {
 				this.pending = this.pending.filter((p) => p !== entry);
 				reject(new DoricoError(`no reply from Dorico within ${timeoutMs} ms`));
+				// Replies are matched in order: a late one would answer the next
+				// request. Start afresh on a new connection instead.
+				this.ws?.close();
 			}, timeoutMs);
 			const entry: Pending = {
 				resolve: (m) => {
@@ -158,6 +166,7 @@ export class DoricoClient {
 		if (this.allowTimer) clearTimeout(this.allowTimer);
 		this.state = "not running";
 		this.version = null;
+		this.highestScoreID = -1; // a restarted Dorico counts again
 		for (const p of this.pending.splice(0)) p.reject(new DoricoError(reason));
 		for (const w of this.waiters) w.reject(new DoricoError(reason));
 		this.waiters.clear();
@@ -165,6 +174,8 @@ export class DoricoClient {
 
 	private receive(m: Incoming): void {
 		if (m.message === "status") {
+			const id = (m as Status).activeOpenScoreID;
+			if (typeof id === "number" && id > this.highestScoreID) this.highestScoreID = id;
 			for (const w of this.waiters)
 				if (w.pred(m as Status)) {
 					this.waiters.delete(w);

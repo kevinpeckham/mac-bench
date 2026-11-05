@@ -3,6 +3,10 @@
  * recordings in tests/recordings/ show the real one sending (Elements
  * 6.2.31): the handshake, `kOK` and `kUnknownCommand`, full and pushed
  * statuses, `layoutslist`, and the PDF an export writes beside the file.
+ * As tests/recordings/two-projects.log shows: a pushed status carries
+ * `hasScore` only when it changes, `Window.SwitchToLayout` is accepted but
+ * switches nothing, and after a close no window is active, so commands that
+ * need a project in front are refused (`kCommandNotAllowed`).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -19,8 +23,6 @@ export type FakeOptions = {
 	openDelayMs?: number;
 	/** Whether an export writes its PDF (false: the export never appears). */
 	writesPdf?: boolean;
-	/** Whether `Window.SwitchToLayout` brings the project to the front. */
-	honoursSwitch?: boolean;
 	port?: number;
 };
 
@@ -28,11 +30,16 @@ export class FakeDorico {
 	readonly projects = new Map<number, Project>();
 	active: number | null = null;
 	readonly commandsReceived: string[] = [];
+	/** Called on every command, before Dorico acts on it. */
+	onCommand: ((command: string) => void) | null = null;
+	/** How long a command's reply is held back (a Dorico stalled on a dialog). */
+	replyDelayMs = 0;
 	/** Called right after an import adds its project (and its status is pushed). */
 	onOpened: ((id: number) => void) | null = null;
 	/** Every message sent to a client, in order. */
 	readonly sent: Record<string, unknown>[] = [];
 	private nextId = 35;
+	private pushedHasScore: boolean | undefined;
 	private readonly server: Server<undefined>;
 	private readonly clients = new Set<ServerWebSocket<undefined>>();
 	private readonly opts: Required<Omit<FakeOptions, "port">>;
@@ -43,7 +50,6 @@ export class FakeDorico {
 			issueToken: "issued-token",
 			openDelayMs: 20,
 			writesPdf: true,
-			honoursSwitch: true,
 			...options,
 		};
 		this.server = Bun.serve({
@@ -97,6 +103,8 @@ export class FakeDorico {
 	}
 
 	private push(fields: Record<string, unknown>) {
+		if (fields.hasScore === this.pushedHasScore) delete fields.hasScore;
+		else this.pushedHasScore = fields.hasScore as boolean;
 		for (const ws of this.clients)
 			this.send(ws, { message: "status", ...fields, selectedEventType: "kNone" });
 	}
@@ -109,13 +117,15 @@ export class FakeDorico {
 					activeViewContainerID: p.viewContainer,
 					hasScore: true,
 				}
-			: { hasScore: this.projects.size > 0 };
+			: { hasScore: false };
 	}
 
 	private fullStatus(): Record<string, unknown> {
+		const fields = this.activeFields();
+		this.pushedHasScore = fields.hasScore as boolean;
 		return {
 			message: "status",
-			...this.activeFields(),
+			...fields,
 			canUndo: false,
 			hasSelection: false,
 			noteInputMode: "kOverwrite",
@@ -173,6 +183,7 @@ export class FakeDorico {
 
 	private command(ws: ServerWebSocket<undefined>, command: string) {
 		this.commandsReceived.push(command);
+		this.onCommand?.(command);
 		const [name, query = ""] = command.split(/\?(.*)/s);
 		const params = new Map(
 			query
@@ -180,7 +191,18 @@ export class FakeDorico {
 				.filter(Boolean)
 				.map((kv) => kv.split(/=(.*)/s) as [string, string]),
 		);
-		const ok = () => this.send(ws, { message: "response", code: "kOK" });
+		const reply = (m: Record<string, unknown>) => {
+			if (this.replyDelayMs) setTimeout(() => this.send(ws, m), this.replyDelayMs);
+			else this.send(ws, m);
+		};
+		const ok = () => reply({ message: "response", code: "kOK" });
+		const needsFront = [
+			"Print.ExportCurrentLayoutAsPDF",
+			"File.CloseProject",
+			"Window.SwitchToLayout",
+		];
+		if (needsFront.includes(name ?? "") && this.active === null)
+			return reply({ message: "response", code: "kError", detail: "kCommandNotAllowed" });
 		switch (name) {
 			case "File.Open": {
 				ok();
@@ -205,22 +227,19 @@ export class FakeDorico {
 				const id = Number(params.get("OpenScoreID") ?? this.active);
 				const closed = this.projects.get(id);
 				this.projects.delete(id);
-				if (this.active === id) this.active = [...this.projects.keys()].at(-1) ?? null;
+				this.active = null;
+				// The push after a close keeps the closed ID (probe.log).
 				this.push({
 					activeOpenScoreID: id,
 					activeViewContainerID: closed?.viewContainer,
-					hasScore: this.projects.size > 0,
+					hasScore: false,
 				});
 				return;
 			}
-			case "Window.SwitchToLayout": {
-				ok();
-				const id = Number(params.get("OpenScoreID"));
-				if (this.opts.honoursSwitch && this.projects.has(id)) this.focus(id);
-				return;
-			}
+			case "Window.SwitchToLayout":
+				return ok(); // accepted, but nothing switches
 			default:
-				this.send(ws, { message: "response", code: "kError", detail: "kUnknownCommand" });
+				reply({ message: "response", code: "kError", detail: "kUnknownCommand" });
 		}
 	}
 }

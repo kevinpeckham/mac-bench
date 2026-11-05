@@ -113,6 +113,19 @@ describe("DoricoClient", () => {
 		});
 	});
 
+	test("a reply that comes after its timeout never answers the next request", async () => {
+		const f = fake();
+		const { client } = clientFor(f.url, "known-token", 50);
+		await until(() => client.state === "connected" && client.version !== null);
+		f.replyDelayMs = 300;
+		await expect(client.command("Nope.Unknown", 100)).rejects.toThrow("no reply");
+		f.replyDelayMs = 0;
+		await until(() => client.state !== "connected");
+		await until(() => client.state === "connected");
+		await Bun.sleep(300); // the late kUnknownCommand has arrived by now
+		await client.command("File.Open?File=/nowhere.musicxml"); // kOK, not the late kUnknownCommand
+	});
+
 	test("waitForStatus times out with a DoricoError", async () => {
 		const { client } = clientFor(fake().url);
 		await until(() => client.state === "connected");

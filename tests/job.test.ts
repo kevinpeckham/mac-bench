@@ -72,42 +72,92 @@ describe("runFile", () => {
 		expect(fake.commandsReceived).toEqual([]);
 	});
 
-	test("an import that never appears fails at open", async () => {
+	test("an import that never appears fails at open, saying how to tidy up", async () => {
 		const { client, work } = await setup({ openDelayMs: 2000 });
 		const r = await runFile(client, { name: "a.musicxml", xml: XML("A") }, work, FAST);
 		expect(r).toMatchObject({ ok: false, step: "open" });
+		if (!r.ok) expect(r.message).toContain("close it without saving");
 	});
 
-	test("focus moved to another project: the job's own project is brought back and exported", async () => {
+	test("an open while Kevin has a project open is recognised (no hasScore pushed)", async () => {
+		const { fake, client, work, dir } = await setup();
+		const kevin = kevinsProject(fake, dir);
+		const r = await runFile(client, { name: "a.musicxml", xml: XML("A") }, work, FAST);
+		expect(r.ok).toBe(true);
+		expect([...fake.projects.keys()]).toEqual([kevin.id]);
+	});
+
+	test("Kevin bringing his own project forward during the import is never claimed", async () => {
+		const { fake, client, work, dir } = await setup({ openDelayMs: 150 });
+		const older = kevinsProject(fake, dir);
+		const newer = join(dir, "newer.musicxml");
+		writeFileSync(newer, XML("Newer"));
+		fake.openDirect(newer); // in front as the job starts
+		fake.onCommand = (c) => {
+			if (c.startsWith("File.Open")) setTimeout(() => fake.focus(older.id), 20);
+		};
+		fake.onOpened = () => {
+			fake.onCommand = null;
+		};
+		const r = await runFile(client, { name: "a.musicxml", xml: XML("A") }, work, FAST);
+		expect(r.ok).toBe(true);
+		expect(readdirSync(older.own)).toEqual(["mine.musicxml"]);
+		expect(fake.projects.has(older.id)).toBe(true);
+	});
+
+	test("focus moved to Kevin's project: nothing exported, nothing of his closed, ours left open", async () => {
 		const { fake, client, work, dir } = await setup();
 		const kevin = kevinsProject(fake, dir);
 		fake.onOpened = () => fake.focus(kevin.id);
 		const r = await runFile(client, { name: "a.musicxml", xml: XML("A") }, work, FAST);
-		expect(r.ok).toBe(true);
-		expect(
-			fake.commandsReceived.some((c) => c.startsWith("Window.SwitchToLayout?OpenScoreID=36&")),
-		).toBe(true);
-		expect([...fake.projects.keys()]).toEqual([kevin.id]);
-		expect(readdirSync(kevin.own)).toEqual(["mine.musicxml"]);
-	});
-
-	test("focus can't be restored: nothing is exported, only the job's project is closed", async () => {
-		const { fake, client, work, dir } = await setup({ honoursSwitch: false });
-		const kevin = kevinsProject(fake, dir);
-		fake.onOpened = () => fake.focus(kevin.id);
-		const r = await runFile(client, { name: "a.musicxml", xml: XML("A") }, work, FAST);
 		expect(r).toMatchObject({ ok: false, step: "focus" });
+		if (!r.ok) expect(r.message).toContain("left open");
 		expect(fake.commandsReceived).not.toContain("Print.ExportCurrentLayoutAsPDF");
-		expect([...fake.projects.keys()]).toEqual([kevin.id]);
+		expect(fake.commandsReceived.some((c) => c.startsWith("File.CloseProject"))).toBe(false);
+		expect(fake.projects.has(kevin.id)).toBe(true);
 		expect(readdirSync(kevin.own)).toEqual(["mine.musicxml"]);
 	});
 
-	test("an export that never appears fails at export, closes, and keeps the folder", async () => {
+	test("focus moved during the export: says so at once", async () => {
+		const { fake, client, work, dir } = await setup({ writesPdf: false });
+		const kevin = kevinsProject(fake, dir);
+		fake.onCommand = (c) => {
+			if (c === "Print.ExportCurrentLayoutAsPDF") fake.focus(kevin.id);
+		};
+		const started = Date.now();
+		const r = await runFile(client, { name: "a.musicxml", xml: XML("A") }, work, {
+			...FAST,
+			exportMs: 5000,
+		});
+		expect(Date.now() - started).toBeLessThan(2000);
+		expect(r).toMatchObject({ ok: false, step: "export" });
+		if (!r.ok) expect(r.message).toContain("focus moved");
+		expect(fake.projects.has(kevin.id)).toBe(true);
+	});
+
+	test("an export that never appears: nothing proves the project ours, so it is left open", async () => {
 		const { fake, client, work } = await setup({ writesPdf: false });
 		const r = await runFile(client, { name: "a.musicxml", xml: XML("A") }, work, FAST);
 		expect(r).toMatchObject({ ok: false, step: "export" });
-		expect(fake.projects.size).toBe(0);
+		if (!r.ok) expect(r.message).toContain("left open");
+		expect(fake.commandsReceived.some((c) => c.startsWith("File.CloseProject"))).toBe(false);
 		expect(jobFolders(work)).toHaveLength(1);
+	});
+
+	test("Dorico restarting (IDs start again) doesn't stop the next job", async () => {
+		const { fake, client, work } = await setup();
+		expect((await runFile(client, { name: "a.musicxml", xml: XML("A") }, work, FAST)).ok).toBe(
+			true,
+		);
+		const port = fake.port;
+		fake.kill();
+		const again = new FakeDorico({ port });
+		cleanup.push(() => again.stop());
+		const end = Date.now() + 2000;
+		while (client.state === "connected" && Date.now() < end) await Bun.sleep(10);
+		while (client.state !== "connected" && Date.now() < end) await Bun.sleep(10);
+		const r = await runFile(client, { name: "b.musicxml", xml: XML("B") }, work, FAST);
+		expect(r.ok).toBe(true);
 	});
 
 	test("Dorico going away mid-job fails the job without throwing", async () => {

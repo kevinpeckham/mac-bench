@@ -2,7 +2,12 @@
  * A job: MusicXML in, the PDF Dorico engraves from it out. Each file gets a
  * fresh folder (Dorico exports beside the file it opened, and an existing
  * PDF would stop it on a dialog), is opened, exported only while it is the
- * project in front, and closed by ID without saving, whatever happens.
+ * project in front, and closed without saving.
+ *
+ * Kevin works in the same Dorico, so a project is closed only once it has
+ * proved itself the job's (its PDF landed in the job's folder) and is the
+ * one in front. Anything less leaves it open and says so: a stray project
+ * is a nuisance, a closed one of his is lost work.
  */
 import {
 	existsSync,
@@ -15,7 +20,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { DoricoClient } from "./client.js";
-import { DoricoError, type Status } from "./protocol.js";
+import { DoricoError } from "./protocol.js";
 
 export type JobFile = { name: string; xml: string };
 
@@ -60,37 +65,46 @@ async function as<T>(step: Step, work: () => Promise<T>): Promise<T> {
 	}
 }
 
-/** Open `file` and return the new project's IDs. */
-async function open(client: DoricoClient, file: string, ms: number) {
-	const before = (await client.status()).activeOpenScoreID;
+const LEFT_OPEN = "the job's project is left open in Dorico: close it without saving";
+
+/** Open `file` and return the new project's ID: the first one newer than any seen before. */
+async function open(client: DoricoClient, file: string, ms: number): Promise<number> {
+	await client.status();
+	const floor = client.highestScoreID;
 	const opened = client.waitForStatus(
-		(s) =>
-			s.hasScore === true && s.activeOpenScoreID !== undefined && s.activeOpenScoreID !== before,
+		(s) => typeof s.activeOpenScoreID === "number" && s.activeOpenScoreID > floor,
 		ms,
 	);
 	opened.catch(() => {}); // the command may fail first
 	await client.command(`File.Open?File=${file}`);
 	const s = await opened.catch(() => {
-		throw new StepError("open", `Dorico didn't open the file within ${ms} ms`);
+		throw new StepError(
+			"open",
+			`Dorico didn't open the file within ${ms} ms; if it opens later, close it without saving`,
+		);
 	});
-	return { id: s.activeOpenScoreID as number, view: s.activeViewContainerID };
+	return s.activeOpenScoreID as number;
 }
 
-/** Make sure the job's project is the one in front: the export takes whatever is. */
-async function focus(client: DoricoClient, id: number, view: number | undefined) {
-	if ((await client.status()).activeOpenScoreID === id) return;
-	const layout =
-		(await client.layouts()).find((l) => l.layoutType === "kFullScoreLayout")?.layoutID ?? 0;
-	const back = client.waitForStatus((s: Status) => s.activeOpenScoreID === id, 2000);
-	back.catch(() => {});
-	await client.command(
-		`Window.SwitchToLayout?OpenScoreID=${id}&ScoreLayoutViewContainerID=${view}&LayoutID=${layout}`,
-	);
-	await back.catch(() => {});
-	if ((await client.status()).activeOpenScoreID !== id)
+const inFront = async (client: DoricoClient, id: number) =>
+	(await client.status()).activeOpenScoreID === id;
+
+/**
+ * The export takes whatever project is in front. Dorico accepts
+ * `Window.SwitchToLayout` but doesn't switch (two-projects.log), so a job
+ * whose project isn't in front can only stop.
+ */
+async function focus(client: DoricoClient, id: number) {
+	if (!(await inFront(client, id)))
+		throw new StepError("focus", `another project is in front in Dorico; ${LEFT_OPEN}`);
+}
+
+async function exportPdf(client: DoricoClient, id: number) {
+	await client.command("Print.ExportCurrentLayoutAsPDF");
+	if (!(await inFront(client, id)))
 		throw new StepError(
-			"focus",
-			"another project is in front in Dorico and couldn't be moved back",
+			"export",
+			`focus moved to another project while exporting, which may have been exported beside its own file; ${LEFT_OPEN}`,
 		);
 }
 
@@ -111,6 +125,8 @@ async function exported(dir: string, ms: number): Promise<Uint8Array> {
 }
 
 async function close(client: DoricoClient, id: number, ms: number) {
+	if (!(await inFront(client, id)))
+		throw new StepError("close", `another project is in front in Dorico; ${LEFT_OPEN}`);
 	await client.command(`File.CloseProject?OpenScoreID=${id}&Save=false`, ms);
 	// The status pushed after a close keeps the closed ID: ask afresh.
 	if ((await client.status(ms)).activeOpenScoreID === id)
@@ -136,24 +152,29 @@ export async function runFile(
 	mkdirSync(dir, { recursive: true });
 	const path = join(dir, safeName(name));
 	writeFileSync(path, file.xml);
-	let project: { id: number; view: number | undefined } | null = null;
+	let id: number | null = null;
 	let result: FileResult;
 	try {
-		project = await as("open", () => open(client, path, timeouts.openMs));
-		const { id, view } = project;
-		await as("focus", () => focus(client, id, view));
-		await as("export", () => client.command("Print.ExportCurrentLayoutAsPDF"));
+		const project = await as("open", () => open(client, path, timeouts.openMs));
+		id = project;
+		await as("focus", () => focus(client, project));
+		await as("export", () => exportPdf(client, project));
 		result = { name, ok: true, pdf: await as("export", () => exported(dir, timeouts.exportMs)) };
 	} catch (e) {
 		const err = e instanceof StepError ? e : new StepError("open", String(e));
-		result = { name, ok: false, step: err.step, message: err.message };
+		const message =
+			id !== null && !err.message.includes(LEFT_OPEN)
+				? `${err.message}; ${LEFT_OPEN}`
+				: err.message;
+		result = { name, ok: false, step: err.step, message };
 	}
-	if (project) {
-		const { id } = project;
+	// Only a project that produced the job's PDF is provably the job's.
+	if (result.ok && id !== null) {
+		const project = id;
 		try {
-			await as("close", () => close(client, id, timeouts.closeMs));
+			await as("close", () => close(client, project, timeouts.closeMs));
 		} catch (e) {
-			if (result.ok) result = { name, ok: false, step: "close", message: (e as Error).message };
+			result = { name, ok: false, step: "close", message: (e as Error).message };
 		}
 	}
 	if (result.ok) rmSync(dir, { recursive: true, force: true });
