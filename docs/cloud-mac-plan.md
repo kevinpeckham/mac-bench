@@ -84,8 +84,40 @@ Stem Shovel's DAW tests (Ableton Live, Logic Pro) beside Dorico. Research:
 - [ ] Write the "before you cancel" checklist: deactivate Dorico in
   Steinberg's Activation Manager, deauthorize Ableton, remove the Mac
   from the MDM, then cancel.
-- [ ] Set up the Mac; buy Logic through Apps and Books; install Dorico,
-  Ableton and Logic; move `MAC_BENCH_URL` to it; run the Dorico checks.
+## Next: pick up here
+
+Dorico is done (above). Left for the DAWs, in order:
+
+1. **SimpleMDM trial** (Kevin): sign up; in Apple Business, create the
+   MDM server and download its token for SimpleMDM, and connect an
+   Apps and Books content token (Apple suggests a dedicated managed
+   account for tokens, so a password change doesn't break them).
+2. **Enroll the Mac by hand** with SimpleMDM's enrollment link, approving
+   it in System Settings on the Mac (screen sharing).
+3. **Push the screen-recording setting:** a custom profile with
+   Restrictions (`com.apple.applicationaccess`)
+   `forceBypassScreenCaptureAlert = true`. Check it lands and the
+   monthly prompt stops.
+4. **Logic Pro** ($199.99, macOS 26.1 or later): buy one licence in Apple
+   Business → Apps and Books (card accepted), assign it to the Mac in
+   SimpleMDM, install. Confirm a US-bought licence installs on the Mac in
+   Ireland. Then open Logic once over screen sharing to download its
+   essential sounds and clear its first-run prompts.
+5. **Ableton Live: buy a licence.** Kevin has only ever had a trial, so
+   nothing is authorized anywhere yet. To decide: which edition (Intro,
+   Standard or Suite: the converter tests may need Suite's devices to
+   open real-world projects), and whose account it's bought on (a
+   Lightning Jar account, to match keeping the cloud Mac off personal
+   accounts). Then install from ableton.com, authorize it on the cloud Mac
+   (one of the licence's two authorizations), and open it once to clear
+   first-run prompts (Local Network, audio device, any downloads).
+6. **First DAW automation spike:** what Stem Shovel's converter tests need
+   from each DAW (open a project, export or bounce, read results), and
+   how to drive them (AppleScript or UI scripting, Ableton's Remote
+   Scripts, Logic's limits). Plan it like the Dorico checks: spike,
+   design, then build.
+
+## Later
 - [ ] Rebuild it once from the script early, before anything depends on it.
 - [ ] Free the MacBook: Remote Login off; the helper can stay or be
   removed (`launchctl bootout gui/$UID/dev.lj.mac-bench`); deactivate
@@ -94,6 +126,6 @@ Stem Shovel's DAW tests (Ableton Live, Logic Pro) beside Dorico. Research:
 ## Licences on the cloud Mac
 
 - Dorico: one of three Steinberg activations.
-- Ableton Live: the second of two authorizations (the MacBook has the
-  other).
+- Ableton Live: to be bought (Kevin had only a trial); the cloud Mac
+  takes one of the new licence's two authorizations.
 - Logic Pro: Lightning Jar's own copy, assigned to the device.
