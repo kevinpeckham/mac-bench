@@ -5,7 +5,7 @@ Tests that need a Mac and its apps, driven from the bench VM. First:
 engraves from it, with no one at the Mac.
 
 ```
-bun run mac-bench dorico horns.musicxml piano-lines.musicxml
+bin/mac-bench dorico horns.musicxml piano-lines.musicxml
 ok dorico-runs/20261105-170000/horns.pdf
 ok dorico-runs/20261105-170000/piano-lines.pdf
 ```

@@ -11,7 +11,7 @@ Design: `docs/superpowers/specs/2026-11-05-dorico-checks-design.md`.
   `token.ts`) and the job runner (`job.ts`)
 - `src/helper/`: the HTTP helper that runs on the Mac (`main.ts` reads the
   environment; `server.ts` takes everything as arguments)
-- `src/cli/`: `bun run mac-bench dorico …`, run on the VM
+- `src/cli/`: `bin/mac-bench dorico …`, run on the VM (the wrapper keeps the caller's folder; `bun run` would not)
 - `scripts/record.ts`: records real Dorico messages into `tests/recordings/`;
   `scripts/install-launchd.ts`: installs the helper as a launchd agent
 - `tests/fake-dorico.ts`: a fake Remote Control server reproducing the
@@ -22,8 +22,8 @@ Design: `docs/superpowers/specs/2026-11-05-dorico-checks-design.md`.
 ```
 bun test                                   # tests (no env, no Dorico)
 bun run check                              # Biome (tabs) and tsc
-bun run mac-bench dorico <file.musicxml…>  # on the VM: PDFs into dorico-runs/
-bun run mac-bench dorico --health
+bin/mac-bench dorico <file.musicxml…>      # on the VM, from any folder: PDFs into ./dorico-runs/
+bin/mac-bench dorico --health
 bun run helper                             # on the Mac (launchd runs this)
 ```
 
