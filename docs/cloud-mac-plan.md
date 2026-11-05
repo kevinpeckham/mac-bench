@@ -51,7 +51,14 @@ Stem Shovel's DAW tests (Ableton Live, Logic Pro) beside Dorico. Research:
   Homebrew, Tailscale as a system daemon (`brew services`, hostname
   `mac-bench`), mosh (allow `mosh-server` in the firewall if it's on),
   the VM's restricted key. Then close SSH from the internet.
-- [ ] Choose an MDM (free to a few dollars a month for one Mac).
+- [ ] Choose an MDM: research ([docs/research/2026-11-05-mdm.md](research/2026-11-05-mdm.md))
+  recommends **SimpleMDM** (about $3 a month for one Mac, 30-day trial):
+  custom profiles, Apps and Books assigned to the device, enrollment by
+  link; confirm those in the trial. Runner-up Jamf Now. Apple's own MDM in
+  the merged "Apple Business" (April 2026) needs a Managed Apple Account
+  signed in on a hand-enrolled Mac, which we chose to avoid. Logic Pro
+  ($199.99) needs macOS 26.1 or later; check that US-bought licences
+  install on the Mac in Ireland.
 - [ ] Write the setup script in this repo: Homebrew bundle (Tailscale as
   a system daemon, BlackHole, Bun, git), clone, `.env.local` from
   1Password, the launchd agent; plus the settings that can't be scripted
