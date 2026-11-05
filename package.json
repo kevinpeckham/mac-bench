@@ -1,0 +1,22 @@
+{
+	"name": "mac-bench",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Tests that need a Mac and its apps, driven from the bench VM: Dorico checks of MusicXML first.",
+	"scripts": {
+		"test": "bun test",
+		"check": "biome check . && tsc",
+		"helper": "varlock run -- bun src/helper/main.ts",
+		"mac-bench": "varlock run -- bun src/cli/main.ts"
+	},
+	"dependencies": {
+		"@varlock/1password-plugin": "^2.0.5",
+		"varlock": "^1.23.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.6.4",
+		"@types/bun": "^1.4.4",
+		"typescript": "^7.0.2"
+	}
+}

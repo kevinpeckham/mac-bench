@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# mac-bench from any folder: paths are read from where you call it.
+# varlock needs the repo's .env.schema, so the command runs from the repo.
+export MAC_BENCH_CWD="$PWD"
+cd "$(dirname "$(readlink -f "$0")")/.." || exit 1
+exec bunx varlock run -- bun src/cli/main.ts "$@"
