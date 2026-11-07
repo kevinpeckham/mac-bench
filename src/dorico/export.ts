@@ -274,42 +274,52 @@ async function folder(deps: ExportDeps, t: ExportTimeouts, out: string) {
 		const s = p && flat(p).find((n) => n.AXRole === "AXSheet");
 		return s && flat(s).find((n) => n.AXRole === "AXTextField");
 	};
-	// The panel can show before it takes keys, and the first ⌘⇧G is lost (FINDINGS): once more.
+	const where = (ws: AxNode[]) => {
+		const p = panel(ws);
+		return p && flat(p).find((n) => n.AXRole === "AXPopUpButton" && n.AXTitle === "Where:");
+	};
+	// Return can still leave the panel where it was: the whole Go to Folder step once more.
 	for (let attempt = 1; ; attempt++) {
-		await keys("cmd+shift+g");
+		// The panel can show before it takes keys, and the first ⌘⇧G is lost (FINDINGS): once more.
+		for (let tries = 1; ; tries++) {
+			await keys("cmd+shift+g");
+			try {
+				await waitFor(client, t, "folder", field, () => "the Go to Folder sheet didn't show");
+				break;
+			} catch (e) {
+				if (tries > 1) throw e;
+			}
+		}
+		await ax(client, "set", "--dialogs", "--sheet", "--value", `${out}/`);
+		// Return only into the sheet, holding the path: without it, Return would be
+		// the Open panel's Choose (Dorico's remembered folder) or the dialog's OK.
+		await waitFor(
+			client,
+			t,
+			"folder",
+			(ws) => (field(ws)?.AXValue === `${out}/` ? true : undefined),
+			(ws) =>
+				field(ws)
+					? `the Go to Folder sheet holds "${String(field(ws)?.AXValue ?? "")}", not the job's folder`
+					: "the Go to Folder sheet went away before Return",
+		);
+		// Return straight after the path is set can close the sheet without going there (FINDINGS).
+		await Bun.sleep(t.settleMs);
+		await keys("return");
 		try {
-			await waitFor(client, t, "folder", field, () => "the Go to Folder sheet didn't show");
+			await waitFor(
+				client,
+				t,
+				"folder",
+				(ws) => (!field(ws) && where(ws)?.AXValue === basename(out) ? true : undefined),
+				(ws) =>
+					`the folder picker didn't go to the job's folder (Where: shows "${String(where(ws)?.AXValue ?? "nothing")}")`,
+			);
 			break;
 		} catch (e) {
 			if (attempt > 1) throw e;
 		}
 	}
-	await ax(client, "set", "--dialogs", "--sheet", "--value", `${out}/`);
-	// Return only into the sheet, holding the path: without it, Return would be
-	// the Open panel's Choose (Dorico's remembered folder) or the dialog's OK.
-	await waitFor(
-		client,
-		t,
-		"folder",
-		(ws) => (field(ws)?.AXValue === `${out}/` ? true : undefined),
-		(ws) =>
-			field(ws)
-				? `the Go to Folder sheet holds "${String(field(ws)?.AXValue ?? "")}", not the job's folder`
-				: "the Go to Folder sheet went away before Return",
-	);
-	await keys("return");
-	const where = (ws: AxNode[]) => {
-		const p = panel(ws);
-		return p && flat(p).find((n) => n.AXRole === "AXPopUpButton" && n.AXTitle === "Where:");
-	};
-	await waitFor(
-		client,
-		t,
-		"folder",
-		(ws) => (!field(ws) && where(ws)?.AXValue === basename(out) ? true : undefined),
-		(ws) =>
-			`the folder picker didn't go to the job's folder (Where: shows "${String(where(ws)?.AXValue ?? "nothing")}")`,
-	);
 	await press(client, t, "--title", "Choose", "--role", "AXButton");
 	const label = (ws: AxNode[]) => {
 		const d = dialog(ws, EXPORT);

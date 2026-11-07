@@ -70,6 +70,8 @@ export type FakeAxOptions = {
 	rebuildLooks?: number;
 	/** The first ⌘⇧G is lost (the Open panel not yet taking keys), as it was once live. */
 	goToLostOnce?: boolean;
+	/** The first Return in the Go to Folder sheet closes it without going there, as it did live. */
+	goToMissesOnce?: boolean;
 };
 
 const DEFAULTS: Record<string, 0 | 1> = {
@@ -105,6 +107,7 @@ export class FakeAx implements AxClient {
 	/** Presses left that find nothing while the dialog rebuilds (FakeAxOptions.rebuildLooks). */
 	private rebuilding = 0;
 	private goToLost = false;
+	private goToMissed = false;
 	/** Indexes in `log` of presses that found nothing. */
 	private readonly missed = new Set<number>();
 	private readonly actions = new WeakMap<AxNode, () => void>();
@@ -124,6 +127,7 @@ export class FakeAx implements AxClient {
 			palette: false,
 			rebuildLooks: 0,
 			goToLostOnce: false,
+			goToMissesOnce: false,
 			...opts,
 			stuck: opts.stuck ?? null,
 		};
@@ -224,7 +228,8 @@ export class FakeAx implements AxClient {
 			else this.sheet = true;
 		} else if (combo === "return" && this.sheet) {
 			this.sheet = false;
-			if (this.o.folderTakes) this.where = basename(this.sheetValue.replace(/\/+$/, ""));
+			if (this.o.goToMissesOnce && !this.goToMissed) this.goToMissed = true;
+			else if (this.o.folderTakes) this.where = basename(this.sheetValue.replace(/\/+$/, ""));
 		} else if (combo === "return" && this.openPanel) {
 			this.choose(); // Return without the sheet: the panel's default button
 		} else if (combo === "escape") {
