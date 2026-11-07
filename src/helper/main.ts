@@ -36,7 +36,8 @@ const ax = macBenchAx(join(WORK, "ax/MacBenchAX.app"), join(WORK, "ax"));
  * it only after opening its file that way): keep that order.
  */
 const activate = async () => {
-	if (client.state !== "connected") throw new Error("Dorico isn't connected; not bringing it forward");
+	if (client.state !== "connected")
+		throw new Error("Dorico isn't connected; not bringing it forward");
 	await Bun.spawn(["open", "-a", "Dorico 6"], { stdout: "ignore", stderr: "ignore" }).exited;
 	await Bun.sleep(300); // the switch lands a moment after open returns
 };
