@@ -58,7 +58,8 @@ Dorico's own Export MusicXML dialog through macOS Accessibility, via
    hoc with the hardened runtime, and prints the next two steps.
 2. **Ask for the grant:**
    `open -a "$HOME/Library/Application Support/mac-bench/ax/MacBenchAX.app" --args request --out "$HOME/Library/Application Support/mac-bench/ax/answers/request.json"`
-   (`--out` is required, and must be inside the mac-bench folder).
+   (`--out` is required: a `.json` file directly in `mac-bench/ax/answers/`,
+   which `build-ax.ts` creates).
 3. **Grant it:** System Settings > Privacy & Security > Device Control and
    Data Access (macOS 27; Accessibility on older macOS) > Accessibility:
    switch MacBenchAX on.

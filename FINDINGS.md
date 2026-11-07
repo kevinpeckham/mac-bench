@@ -145,9 +145,11 @@ said; a program granted Accessibility can do a lot. Fix
 name (a running app's name can be anything); `keys` refuses (exit 5, a JSON
 error) unless the frontmost app is allowlisted, so the job brings Dorico
 forward before every key step and treats a refusal as that step's failure;
-`--out` is required, even for `request`, and must be inside
-`~/Library/Application Support/mac-bench/` (otherwise exit 65 and no
-answer), written 0600, so answers go to `…/mac-bench/ax/answers/`; and
+`--out` is required, even for `request`, and must be a `.json` file
+directly in `~/Library/Application Support/mac-bench/ax/answers/`
+(otherwise exit 65; a missing answers folder, or a link in its place, is
+exit 66; both say why on stderr and write nothing), its `.part` created
+exclusively and renamed into place, 0600; and
 `scripts/build-ax.ts` signs it with the hardened runtime
 (`codesign --options runtime`, no entitlements), so `DYLD_*` variables
 can't inject code into the process that holds the grant. Still
