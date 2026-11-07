@@ -35,10 +35,12 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
 - A job only ever closes a project it has proved its own (its PDF landed
   in the job's folder, and it is in front); anything else is left open and
   reported, so a project of yours in the same Dorico is never closed.
-- An export job cancels every dialog it leaves open (Cancel, then Escape,
-  up to four rounds) and names any it couldn't close; the only text it
-  types is the export folder's path, and the only OK it presses is the
-  Export MusicXML dialog's. MacBenchAX acts only on Dorico (by bundle ID),
+- An export job starts only when Dorico shows no dialog or open menu, and
+  cancels every dialog (and closes any menu) it leaves open (Cancel, then
+  Escape, up to four rounds), naming any it couldn't close; the only text
+  it types is the export folder's path, the only OK it presses is the
+  Export MusicXML dialog's, and Return goes only to the Go to Folder sheet
+  holding that path. MacBenchAX acts only on Dorico (by bundle ID),
   types only while Dorico is frontmost, writes only inside the helper's
   work folder, and is signed with the hardened runtime (no `DYLD_*`
   injection).

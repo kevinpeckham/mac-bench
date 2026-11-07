@@ -55,9 +55,14 @@ bun run helper                             # on the Mac (launchd runs this)
   `tccutil reset Accessibility dev.lj.mac-bench.ax` and grant again
   (README). It acts only on Dorico by bundle ID, types only while Dorico is
   frontmost, and answers only inside the work folder.
-- An export job types nothing but the folder path, presses OK only in
-  Export MusicXML, and always runs its failsafe (cancel every dialog) and
-  closes its project unsaved.
+- An export job starts only when Dorico shows no dialog or open menu
+  (`--dialogs` everywhere: never into a document window). It types nothing
+  but the folder path; the only OK it presses is the Export MusicXML
+  dialog's, when that is the one dialog open; and it sends Return only to
+  the Go to Folder sheet once that holds the path (Return elsewhere could
+  act as OK or Choose). It always runs its failsafe (cancel every dialog,
+  close any menu) and then closes its project unsaved, unless a dialog
+  stayed open.
 - The repo is public: never commit a Dorico session token or any secret.
 - Test first; conventional commits with no Co-Authored-By or other AI
   trailer; a CHANGELOG `[Unreleased]` entry per user-visible change; a

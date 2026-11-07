@@ -39,6 +39,10 @@ there unchanged.
 - Judging the PDF automatically (Claude reads it; image diffing may come later).
 - Stem Shovel jobs, other apps (MuseScore, Logic), MusicXML export *from*
   Dorico, provisioning the cloud Mac. The design leaves room for them.
+  (Update 2026-11-07: MusicXML export from Dorico is now done, through
+  Dorico's own dialog and macOS Accessibility rather than Remote Control:
+  `src/dorico/export.ts`, `ax/`, and FINDINGS "Dorico's MusicXML export,
+  through Accessibility".)
 - Any Dorico Pro feature (Kevin has **Dorico Elements 6.2.31**; Lua scripting
   is Pro only).
 

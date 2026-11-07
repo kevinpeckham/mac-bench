@@ -155,6 +155,28 @@ true, and accepted: any program running as this user can launch it, so the
 grant's reach is only as narrow as the allowlist: Dorico, on a
 single-user Mac.
 
+### Review of the export job: what the fakes hid (2026-11-07)
+
+Symptom: a review found the job would have failed or misbehaved live in
+ways the tests passed: a floating window (Mixer, Key Editor) counted as a
+dialog, so OK was refused and the failsafe reported it every job; a
+dialog stuck from one job would have been taken by the next, which would
+have returned the earlier job's export; a menu left dropped down was
+invisible to the failsafe; Return sent after the Go to Folder sheet had
+gone would have been the Open panel's Choose (Dorico's remembered folder)
+or the dialog's OK; and the fake's `dismiss` closed the Go to Folder sheet,
+which the real one can't (the sheet has no Cancel), so the tests passed
+for the wrong reason. Cause: a fake more capable and more forgiving than
+the real thing, and TypeScript and Swift each with its own idea of a
+dialog. Fix: one rule (`DIALOG_SUBROLES`, `src/ax/client.ts`, matching
+main.swift's isDialog); a preflight that fails the job if anything is
+open; the menu retried once after Escape; Return only into the sheet
+holding the path; `--dialogs` on every look and press, so a document
+window's tree (with decoy OK and Cancel buttons in the fake) is never
+searched; and a fake that behaves exactly like main.swift
+(`tests/fake-ax.ts`). Rule: a fake of a UI is checked against the real
+program's code, not against what the spike happened to see.
+
 ## Process
 
 ### A broad file search set off macOS's Photos permission prompt (2026-11-05)
