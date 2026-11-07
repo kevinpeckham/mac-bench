@@ -147,7 +147,10 @@ error) unless the frontmost app is allowlisted, so the job brings Dorico
 forward before every key step and treats a refusal as that step's failure;
 `--out` is required, even for `request`, and must be inside
 `~/Library/Application Support/mac-bench/` (otherwise exit 65 and no
-answer), written 0600, so answers go to `…/mac-bench/ax/answers/`. Still
+answer), written 0600, so answers go to `…/mac-bench/ax/answers/`; and
+`scripts/build-ax.ts` signs it with the hardened runtime
+(`codesign --options runtime`, no entitlements), so `DYLD_*` variables
+can't inject code into the process that holds the grant. Still
 true, and accepted: any program running as this user can launch it, so the
 grant's reach is only as narrow as the allowlist: Dorico, on a
 single-user Mac.

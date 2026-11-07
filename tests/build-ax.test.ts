@@ -34,7 +34,7 @@ describe("build-ax", () => {
 			"-o",
 			`${APP}/Contents/MacOS/MacBenchAX`,
 		]);
-		expect(t.ran[3]).toEqual(["codesign", "--force", "-s", "-", APP]);
+		expect(t.ran[3]).toEqual(["codesign", "--force", "--options", "runtime", "-s", "-", APP]);
 		expect(t.out()).toContain("--args request --out");
 		expect(t.out()).toContain("Device Control and Data Access");
 		expect(t.out()).not.toContain("tccutil");

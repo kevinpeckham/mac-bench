@@ -3,7 +3,8 @@
  * Build MacBenchAX on the Mac:  bun scripts/build-ax.ts [--rebuild]
  *
  * Writes ~/Library/Application Support/mac-bench/ax/MacBenchAX.app
- * (ax/Info.plist, ax/main.swift compiled with `swiftc -O`, signed ad hoc).
+ * (ax/Info.plist, ax/main.swift compiled with `swiftc -O`, signed ad hoc
+ * with the hardened runtime).
  * An ad-hoc signed app's Accessibility grant is tied to the build that
  * first asked for it (FINDINGS), so this refuses to replace a built app
  * unless given --rebuild, and then the grant must be reset and given again.
@@ -49,7 +50,9 @@ export function buildAx(args: string[], io: BuildIo): number {
 		["mkdir", "-p", join(app, "Contents/MacOS"), join(work, "ax/answers")],
 		["cp", join(io.repo, "ax/Info.plist"), join(app, "Contents/Info.plist")],
 		["swiftc", "-O", join(io.repo, "ax/main.swift"), "-o", join(app, "Contents/MacOS/MacBenchAX")],
-		["codesign", "--force", "-s", "-", app],
+		// Hardened runtime: no DYLD_* injection into the app holding the grant.
+		// No entitlements that would loosen it (dyld env vars, library validation).
+		["codesign", "--force", "--options", "runtime", "-s", "-", app],
 	];
 	for (const step of steps)
 		if (io.run(step) !== 0) {

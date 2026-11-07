@@ -39,5 +39,6 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
   up to four rounds) and names any it couldn't close; the only text it
   types is the export folder's path, and the only OK it presses is the
   Export MusicXML dialog's. MacBenchAX acts only on Dorico (by bundle ID),
-  types only while Dorico is frontmost, and writes only inside the
-  helper's work folder.
+  types only while Dorico is frontmost, writes only inside the helper's
+  work folder, and is signed with the hardened runtime (no `DYLD_*`
+  injection).

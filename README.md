@@ -55,7 +55,7 @@ Dorico's own Export MusicXML dialog through macOS Accessibility, via
 1. **Build it** on the Mac, from the clone: `bun scripts/build-ax.ts`
    (needs the Xcode command line tools for `swiftc`). It writes
    `~/Library/Application Support/mac-bench/ax/MacBenchAX.app`, signed ad
-   hoc, and prints the next two steps.
+   hoc with the hardened runtime, and prints the next two steps.
 2. **Ask for the grant:**
    `open -a "$HOME/Library/Application Support/mac-bench/ax/MacBenchAX.app" --args request --out "$HOME/Library/Application Support/mac-bench/ax/answers/request.json"`
    (`--out` is required, and must be inside the mac-bench folder).
@@ -74,7 +74,9 @@ app; with `--rebuild` it does, and then you must run
 What it may do is kept narrow: it acts only on Dorico (bundle ID
 `com.steinberg.dorico6`, not a name), posts keys only while Dorico is
 frontmost, and writes its answers only inside
-`~/Library/Application Support/mac-bench/`, owner-only. Any program running
+`~/Library/Application Support/mac-bench/`, owner-only. It is signed with
+the hardened runtime (no entitlements), so `DYLD_*` injection can't borrow
+its grant. Any program running
 as the Mac's user can still launch it; that is accepted on a single-user
 Mac, with the grant limited to Dorico.
 
