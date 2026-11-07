@@ -12,6 +12,7 @@
 import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DoricoClient } from "./client.js";
+import type { ExportFormat, ExportResult } from "./export.js";
 import { DoricoError } from "./protocol.js";
 import {
 	as,
@@ -103,20 +104,27 @@ export async function runFile(
 	return result;
 }
 
-/** Jobs one at a time: Dorico has one project in front. */
+export type JobResult = FileResult | ExportResult;
+
+/**
+ * Jobs one at a time: Dorico has one project in front. PDF jobs (no
+ * format) and MusicXML export jobs share the queue.
+ */
 export class JobQueue {
 	private tail: Promise<unknown> = Promise.resolve();
 	private waiting = 0;
 
-	constructor(private readonly run: (files: JobFile[]) => Promise<FileResult[]>) {}
+	constructor(
+		private readonly run: (files: JobFile[], format?: ExportFormat) => Promise<JobResult[]>,
+	) {}
 
 	get length(): number {
 		return this.waiting;
 	}
 
-	add(files: JobFile[]): Promise<FileResult[]> {
+	add(files: JobFile[], format?: ExportFormat): Promise<JobResult[]> {
 		this.waiting++;
-		const job = this.tail.then(() => this.run(files)).finally(() => this.waiting--);
+		const job = this.tail.then(() => this.run(files, format)).finally(() => this.waiting--);
 		this.tail = job.catch(() => {});
 		return job;
 	}

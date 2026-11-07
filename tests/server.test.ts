@@ -2,10 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AxClient } from "../src/ax/client.js";
 import { DoricoClient } from "../src/dorico/client.js";
+import { type ExportFormat, exportFile } from "../src/dorico/export.js";
 import { type JobFile, JobQueue, runFile } from "../src/dorico/job.js";
 import { startServer } from "../src/helper/server.js";
 import { tailnetAddress } from "../src/helper/tailnet.js";
+import { DORICO, FakeAx } from "./fake-ax.js";
 import { FakeDorico } from "./fake-dorico.js";
 
 const TOKEN = "test-bearer-token";
@@ -16,7 +19,7 @@ afterEach(() => {
 	for (const f of cleanup.splice(0)) f();
 });
 
-async function helper(maxBytes?: number) {
+async function helper(maxBytes?: number, axClient?: AxClient) {
 	const fake = new FakeDorico();
 	const dir = mkdtempSync(join(tmpdir(), "mac-bench-server-"));
 	writeFileSync(join(dir, "token"), "known-token");
@@ -28,9 +31,23 @@ async function helper(maxBytes?: number) {
 	});
 	client.start();
 	const fast = { openMs: 400, exportMs: 400, closeMs: 400 };
-	const queue = new JobQueue(async (files: JobFile[]) => {
+	const ax = new FakeAx({ title: "A" });
+	const deps = {
+		dorico: client,
+		ax,
+		activate: async () => {
+			ax.front = DORICO;
+		},
+	};
+	const slow = { ...fast, dialogMs: 300, settleMs: 1, pollMs: 5 };
+	const queue = new JobQueue(async (files: JobFile[], format?: ExportFormat) => {
 		const out = [];
-		for (const f of files) out.push(await runFile(client, f, join(dir, "work"), fast));
+		for (const f of files)
+			out.push(
+				format
+					? await exportFile(deps, f, format, join(dir, "work"), slow)
+					: await runFile(client, f, join(dir, "work"), fast),
+			);
 		return out;
 	});
 	const server = startServer({
@@ -39,6 +56,7 @@ async function helper(maxBytes?: number) {
 		token: TOKEN,
 		client,
 		queue,
+		ax: axClient ?? ax,
 		...(maxBytes ? { maxBytes } : {}),
 	});
 	cleanup.push(() => {
@@ -48,13 +66,19 @@ async function helper(maxBytes?: number) {
 	});
 	const end = Date.now() + 2000;
 	while (client.state !== "connected" && Date.now() < end) await Bun.sleep(10);
-	return { fake, client, url: server.url };
+	return { fake, client, ax, url: server.url };
 }
 
 const auth = { Authorization: `Bearer ${TOKEN}` };
 
-function post(url: string, files: Record<string, string>, headers: Record<string, string> = auth) {
+function post(
+	url: string,
+	files: Record<string, string>,
+	headers: Record<string, string> = auth,
+	exportAs?: string,
+) {
 	const form = new FormData();
+	if (exportAs !== undefined) form.append("export", exportAs);
 	for (const [name, xml] of Object.entries(files)) form.append("file", new File([xml], name));
 	return fetch(`${url}/jobs`, { method: "POST", body: form, headers });
 }
@@ -146,5 +170,68 @@ describe("the helper", () => {
 		const { url } = await helper();
 		const res = await fetch(`${url}/jobs`, { method: "POST", body: new FormData(), headers: auth });
 		expect(res.status).toBe(400);
+	});
+
+	test("health says whether MacBenchAX is trusted", async () => {
+		const { url } = await helper();
+		expect((await (await fetch(`${url}/health`, { headers: auth })).json()).ax).toEqual({
+			trusted: true,
+		});
+	});
+
+	test("health: MacBenchAX not answering counts as not trusted", async () => {
+		const { url } = await helper(undefined, {
+			run: async () => {
+				throw new Error("no answer");
+			},
+		});
+		expect((await (await fetch(`${url}/health`, { headers: auth })).json()).ax).toEqual({
+			trusted: false,
+		});
+	});
+
+	test("export=musicxml returns each file's export, base64 in file", async () => {
+		const { url, fake } = await helper();
+		const res = await post(url, { "a.musicxml": XML("A") }, auth, "musicxml");
+		expect(res.status).toBe(200);
+		const { results } = await res.json();
+		expect(results[0]).toMatchObject({
+			name: "a.musicxml",
+			ok: true,
+			exported: "A - Full score - 01 A.musicxml",
+		});
+		expect(results[0].pdf).toBeUndefined();
+		expect(Buffer.from(results[0].file, "base64").toString()).toStartWith("fake .musicxml");
+		expect(fake.projects.size).toBe(0);
+	});
+
+	test("export=mxl is accepted", async () => {
+		const { url } = await helper();
+		const { results } = await (await post(url, { "a.musicxml": XML("A") }, auth, "mxl")).json();
+		expect(results[0]).toMatchObject({ ok: true, exported: "A - Full score - 01 A.mxl" });
+	});
+
+	test("400 for any other export value, before anything runs", async () => {
+		const { url, fake, ax } = await helper();
+		for (const bad of ["pdf", "", "MusicXML"]) {
+			const res = await post(url, { "a.musicxml": XML("A") }, auth, bad);
+			expect(res.status).toBe(400);
+			expect((await res.json()).error).toContain("musicxml");
+		}
+		expect(fake.commandsReceived).toEqual([]);
+		expect(ax.log).toEqual([]);
+	});
+
+	test("PDF and export jobs share one queue", async () => {
+		const { url, fake } = await helper();
+		const [a, b] = await Promise.all([
+			post(url, { "a.musicxml": XML("A") }),
+			post(url, { "b.musicxml": XML("A") }, auth, "musicxml"),
+		]);
+		expect([(await a.json()).results[0].ok, (await b.json()).results[0].ok]).toEqual([true, true]);
+		const c = fake.commandsReceived;
+		expect(c.findIndex((x) => x.startsWith("File.CloseProject"))).toBeLessThan(
+			c.findLastIndex((x) => x.startsWith("File.Open")),
+		);
 	});
 });

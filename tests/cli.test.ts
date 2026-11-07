@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dorico } from "../src/cli/dorico.js";
 import { DoricoClient } from "../src/dorico/client.js";
+import { type ExportFormat, exportFile } from "../src/dorico/export.js";
 import { type JobFile, JobQueue, runFile } from "../src/dorico/job.js";
 import { startServer } from "../src/helper/server.js";
+import { DORICO, FakeAx } from "./fake-ax.js";
 import { FakeDorico } from "./fake-dorico.js";
 
 const TOKEN = "cli-token";
@@ -26,12 +28,26 @@ async function helper() {
 	});
 	client.start();
 	const fast = { openMs: 400, exportMs: 400, closeMs: 400 };
-	const queue = new JobQueue(async (files: JobFile[]) => {
+	const ax = new FakeAx({ title: "Horns" });
+	const deps = {
+		dorico: client,
+		ax,
+		activate: async () => {
+			ax.front = DORICO;
+		},
+	};
+	const slow = { ...fast, dialogMs: 300, settleMs: 1, pollMs: 5 };
+	const queue = new JobQueue(async (files: JobFile[], format?: ExportFormat) => {
 		const out = [];
-		for (const f of files) out.push(await runFile(client, f, join(dir, "work"), fast));
+		for (const f of files)
+			out.push(
+				format
+					? await exportFile(deps, f, format, join(dir, "work"), slow)
+					: await runFile(client, f, join(dir, "work"), fast),
+			);
 		return out;
 	});
-	const server = startServer({ hostname: "127.0.0.1", port: 0, token: TOKEN, client, queue });
+	const server = startServer({ hostname: "127.0.0.1", port: 0, token: TOKEN, client, queue, ax });
 	cleanup.push(() => {
 		server.stop();
 		client.stop();
@@ -112,5 +128,47 @@ describe("mac-bench dorico", () => {
 		const r = await run([], "http://127.0.0.1:9");
 		expect(r.code).toBe(2);
 		expect(r.err.join("\n")).toContain("usage");
+	});
+
+	test("--export musicxml writes <base>.dorico.musicxml", async () => {
+		const { url, dir } = await helper();
+		const out = join(dir, "out");
+		const files = charts(dir, { "horns.musicxml": XML("Horns"), "piano.xml": XML("Piano") });
+		const r = await run(["--export", "musicxml", ...files, "--out", out], url);
+		expect(r.code).toBe(0);
+		expect(r.out).toEqual([
+			`ok ${join(out, "horns.dorico.musicxml")}`,
+			`ok ${join(out, "piano.dorico.musicxml")}`,
+		]);
+		expect(readFileSync(join(out, "horns.dorico.musicxml"), "utf8")).toStartWith("fake .musicxml");
+	});
+
+	test("--export mxl writes <base>.dorico.mxl, numbered on a clash", async () => {
+		const { url, dir } = await helper();
+		const out = join(dir, "out");
+		const [a] = charts(dir, { "horns.musicxml": XML("Horns") });
+		const r = await run(["--out", out, "--export", "mxl", a as string, a as string], url);
+		expect(r.code).toBe(0);
+		expect(r.out).toEqual([
+			`ok ${join(out, "horns.dorico.mxl")}`,
+			`ok ${join(out, "horns-2.dorico.mxl")}`,
+		]);
+	});
+
+	test("--export with another format, or none, prints usage", async () => {
+		for (const args of [
+			["--export", "pdf", "a.musicxml"],
+			["a.musicxml", "--export"],
+		]) {
+			const r = await run(args, "http://127.0.0.1:9");
+			expect(r.code).toBe(2);
+			expect(r.err.join("\n")).toContain("--export musicxml|mxl");
+		}
+	});
+
+	test("--health shows whether exports will work", async () => {
+		const { url } = await helper();
+		const r = await run(["--health"], url);
+		expect(JSON.parse(r.out.join("\n")).ax).toEqual({ trusted: true });
 	});
 });
