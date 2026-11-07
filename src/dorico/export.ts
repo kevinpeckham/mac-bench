@@ -5,15 +5,18 @@
  * Dorico's own Export MusicXML dialog through MacBenchAX (macOS
  * Accessibility), as the spike of 2026-11-07 did.
  *
- * Each file gets a fresh job folder: `in/` holds the input, `out/` receives
- * the export. Whatever happens, a failsafe cancels every dialog left open
- * and the project is closed unsaved, by its ID, while it is in front. The
- * only text ever typed is the folder path; the only OK ever pressed is the
- * Export MusicXML dialog's.
+ * Each file gets a fresh job folder: `in/` holds the input, `out-<job>/`
+ * receives the export. A job starts only if Dorico shows no dialog and no
+ * open menu. Whatever happens, a failsafe cancels every dialog left open
+ * and closes any open menu, and the project is closed unsaved, by its ID,
+ * while it is in front. The only text ever typed is the folder path; the
+ * only OK pressed is the Export MusicXML dialog's, and Return is sent only
+ * to the Go to Folder sheet once it holds that path.
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import type { AxClient } from "../ax/client.js";
+import { type AxClient, type AxNode, isDialog } from "../ax/client.js";
 import type { DoricoClient } from "./client.js";
 import type { JobFile, Timeouts } from "./job.js";
 import {
@@ -62,6 +65,8 @@ export type ExportDeps = {
 	ax: AxClient;
 	/** Bring Dorico to the front: keystrokes go to the frontmost app. */
 	activate: () => Promise<void>;
+	/** The home folder, for an "Export to:" shown as `~/…` (default: this user's). */
+	home?: string;
 };
 
 /** Dorico's titles, as the spike read them (Dorico Elements 6.2.31). */
@@ -84,15 +89,6 @@ export const NOT_TRUSTED =
 	`on the Mac run ${REQUEST_COMMAND}, then switch MacBenchAX on in System Settings > ` +
 	"Privacy & Security > Device Control and Data Access > Accessibility (README)";
 
-type AxNode = {
-	AXRole?: string;
-	AXSubrole?: string;
-	AXTitle?: string;
-	AXValue?: unknown;
-	AXIdentifier?: string;
-	children?: AxNode[];
-};
-
 /** Run a MacBenchAX command; an `error` in its answer, or `ok: false`, throws. */
 async function ax(client: AxClient, ...args: string[]): Promise<Record<string, unknown>> {
 	const r = await client.run(args);
@@ -101,10 +97,21 @@ async function ax(client: AxClient, ...args: string[]): Promise<Record<string, u
 	return r;
 }
 
-async function windows(client: AxClient, depth = 12): Promise<AxNode[]> {
-	const r = await ax(client, "dump", "--depth", String(depth));
-	return Array.isArray(r.windows) ? (r.windows as AxNode[]) : [];
+/** Dorico's dialogs (and other windows' sheets): never its document windows' trees. */
+type Seen = { windows: AxNode[]; menuOpen: string | null };
+
+async function look(client: AxClient, depth = 12): Promise<Seen> {
+	const r = await ax(client, "dump", "--dialogs", "--depth", String(depth));
+	const all = Array.isArray(r.windows) ? (r.windows as AxNode[]) : [];
+	return {
+		// MacBenchAX already leaves out other windows; this keeps the rule in one place.
+		windows: all.filter((w) => isDialog(w) || w.AXRole === "AXSheet"),
+		menuOpen: typeof r.menuOpen === "string" ? r.menuOpen : null,
+	};
 }
+
+/** Press in Dorico's dialogs only. */
+const press = (client: AxClient, ...args: string[]) => ax(client, "press", "--dialogs", ...args);
 
 /** `n` and everything under it, in the order the dump lists them. */
 const flat = (n: AxNode, acc: AxNode[] = []): AxNode[] => {
@@ -113,15 +120,19 @@ const flat = (n: AxNode, acc: AxNode[] = []): AxNode[] => {
 	return acc;
 };
 
-const dialogs = (ws: AxNode[]) => ws.filter((w) => w.AXSubrole !== "AXStandardWindow");
 const dialog = (ws: AxNode[], title: string) =>
 	ws.find((w) => w.AXSubrole === "AXDialog" && w.AXTitle === title);
 const titleOf = (w: AxNode) => w.AXTitle || w.AXSubrole || w.AXRole || "untitled";
 const noSlash = (p: string) => p.replace(/\/+$/, "");
+/** What is open, for a message: the dialogs, and a menu. */
+const openThings = (s: Seen) => [
+	...s.windows.map(titleOf),
+	...(s.menuOpen !== null ? [`the ${s.menuOpen || "untitled"} menu`] : []),
+];
 
 /**
- * Poll the windows until `pick` finds something, for at most `ms`; then
- * stop as `step`, saying `failed(last windows)`.
+ * Poll the dialogs until `pick` finds something, for at most `dialogMs`;
+ * then stop as `step`, saying `failed(last windows)`.
  */
 async function waitFor<T>(
 	client: AxClient,
@@ -132,10 +143,10 @@ async function waitFor<T>(
 ): Promise<T> {
 	const end = Date.now() + t.dialogMs;
 	for (;;) {
-		const ws = await windows(client);
-		const found = pick(ws);
+		const { windows } = await look(client);
+		const found = pick(windows);
 		if (found !== undefined) return found;
-		if (Date.now() >= end) throw new StepError(step, failed(ws));
+		if (Date.now() >= end) throw new StepError(step, failed(windows));
 		await Bun.sleep(t.pollMs);
 	}
 }
@@ -149,10 +160,38 @@ const exportDialog = (client: AxClient, t: ExportTimeouts, step: Step) =>
 		() => `Dorico's ${EXPORT} dialog didn't show within ${t.dialogMs} ms`,
 	);
 
-/** The dialog's checkboxes, in order. */
-const boxes = (d: AxNode) => flat(d).filter((n) => n.AXRole === "AXCheckBox");
-const value = (d: AxNode, title: string) => {
-	const box = boxes(d).find((b) => b.AXTitle === title);
+/** File > Export > MusicXML..., into a Dorico showing no dialog; once more if a menu was left open. */
+async function openExport(deps: ExportDeps, t: ExportTimeouts) {
+	const before = await look(deps.ax, 1);
+	if (before.windows.length || before.menuOpen !== null)
+		throw new StepError(
+			"dialog",
+			`Dorico isn't clear before the menu: ${openThings(before).join(", ")}`,
+		);
+	for (let attempt = 1; ; attempt++) {
+		await deps.activate();
+		await ax(deps.ax, "menu", "--path", MENU);
+		try {
+			return await exportDialog(deps.ax, t, "dialog");
+		} catch (e) {
+			if (attempt > 1) throw e;
+			const now = await look(deps.ax, 1);
+			if (now.windows.length) throw e; // something else showed: the failsafe's business
+			if (now.menuOpen !== null) {
+				await deps.activate();
+				await ax(deps.ax, "keys", "--combo", "escape");
+			}
+		}
+	}
+}
+
+/** The dialog's checkboxes, in order, from just after the one titled `after` if given. */
+const boxes = (d: AxNode, after?: string) => {
+	const all = flat(d).filter((n) => n.AXRole === "AXCheckBox");
+	return after === undefined ? all : all.slice(all.findIndex((b) => b.AXTitle === after) + 1);
+};
+const value = (d: AxNode, title: string, after?: string) => {
+	const box = boxes(d, after).find((b) => b.AXTitle === title);
 	if (!box) throw new StepError("options", `no "${title}" checkbox in Dorico's ${EXPORT} dialog`);
 	return Number(box.AXValue);
 };
@@ -160,21 +199,29 @@ const value = (d: AxNode, title: string) => {
 /** Make the dialog's checkboxes as `format` needs, pressing only those that differ. */
 async function options(client: AxClient, t: ExportTimeouts, format: ExportFormat) {
 	// The wanted format on before the other goes off: Dorico may insist on one.
-	const wanted: [string, number][] = [
+	// Full score is the layout (after "separate files"), never a flow of that name.
+	const wanted: [string, number, string?][] = [
 		[format === "mxl" ? MXL : XML, 1],
 		[format === "mxl" ? XML : MXL, 0],
 		[FOLDER, 0],
 		[SEPARATE, 0],
-		[FULL_SCORE, 1],
+		[FULL_SCORE, 1, SEPARATE],
 	];
 	let d = await exportDialog(client, t, "options");
-	for (const [title, want] of wanted) {
-		if (value(d, title) === want) continue;
-		await ax(client, "press", "--title", title, "--role", "AXCheckBox");
+	for (const [title, want, after] of wanted) {
+		if (value(d, title, after) === want) continue;
+		await press(
+			client,
+			"--title",
+			title,
+			"--role",
+			"AXCheckBox",
+			...(after ? ["--after", after] : []),
+		);
 		d = await exportDialog(client, t, "options");
 	}
-	for (const [title, want] of wanted) {
-		const v = value(d, title);
+	for (const [title, want, after] of wanted) {
+		const v = value(d, title, after);
 		if (v !== want)
 			throw new StepError("options", `"${title}" is ${v} after pressing it, not ${want}`);
 	}
@@ -188,29 +235,41 @@ async function options(client: AxClient, t: ExportTimeouts, format: ExportFormat
 		throw new StepError("options", "no flow is selected for export in Dorico's dialog");
 }
 
+/** `~/…` as a full path. */
+const expand = (p: string, home: string) =>
+	p === "~" || p.startsWith("~/") ? home + p.slice(1) : p;
+
 /** Point the dialog's "Export to:" at `out` through the Open panel. */
-async function folder(
-	client: AxClient,
-	t: ExportTimeouts,
-	out: string,
-	activate: () => Promise<void>,
-) {
+async function folder(deps: ExportDeps, t: ExportTimeouts, out: string) {
+	const client = deps.ax;
 	// MacBenchAX posts keys only while Dorico is frontmost: bring it forward before each.
 	const keys = async (combo: string) => {
-		await activate();
+		await deps.activate();
 		await ax(client, "keys", "--combo", combo);
 	};
-	await ax(client, "press", "--title", FOLDER_BUTTON, "--role", "AXButton");
+	await press(client, "--title", FOLDER_BUTTON, "--role", "AXButton");
 	const panel = (ws: AxNode[]) => dialog(ws, "Open");
 	await waitFor(client, t, "folder", panel, () => "the folder picker (Open) didn't show");
 	await keys("cmd+shift+g");
-	const sheet = (ws: AxNode[]) => {
+	const field = (ws: AxNode[]) => {
 		const p = panel(ws);
 		const s = p && flat(p).find((n) => n.AXRole === "AXSheet");
-		return s && flat(s).some((n) => n.AXRole === "AXTextField") ? s : undefined;
+		return s && flat(s).find((n) => n.AXRole === "AXTextField");
 	};
-	await waitFor(client, t, "folder", sheet, () => "the Go to Folder sheet didn't show");
-	await ax(client, "set", "--sheet", "--value", `${out}/`);
+	await waitFor(client, t, "folder", field, () => "the Go to Folder sheet didn't show");
+	await ax(client, "set", "--dialogs", "--sheet", "--value", `${out}/`);
+	// Return only into the sheet, holding the path: without it, Return would be
+	// the Open panel's Choose (Dorico's remembered folder) or the dialog's OK.
+	await waitFor(
+		client,
+		t,
+		"folder",
+		(ws) => (field(ws)?.AXValue === `${out}/` ? true : undefined),
+		(ws) =>
+			field(ws)
+				? `the Go to Folder sheet holds "${String(field(ws)?.AXValue ?? "")}", not the job's folder`
+				: "the Go to Folder sheet went away before Return",
+	);
 	await keys("return");
 	const where = (ws: AxNode[]) => {
 		const p = panel(ws);
@@ -220,22 +279,25 @@ async function folder(
 		client,
 		t,
 		"folder",
-		(ws) => (!sheet(ws) && where(ws)?.AXValue === basename(out) ? true : undefined),
+		(ws) => (!field(ws) && where(ws)?.AXValue === basename(out) ? true : undefined),
 		(ws) =>
 			`the folder picker didn't go to the job's folder (Where: shows "${String(where(ws)?.AXValue ?? "nothing")}")`,
 	);
-	await ax(client, "press", "--title", "Choose", "--role", "AXButton");
+	await press(client, "--title", "Choose", "--role", "AXButton");
 	const label = (ws: AxNode[]) => {
 		const d = dialog(ws, EXPORT);
 		const l = d && flat(d).find((n) => n.AXIdentifier?.endsWith("folderPathLabel"));
 		return l ? String(l.AXValue ?? "") : undefined;
 	};
+	const home = deps.home ?? homedir();
 	await waitFor(
 		client,
 		t,
 		"folder",
-		(ws) =>
-			!panel(ws) && label(ws) !== undefined && noSlash(label(ws) ?? "") === out ? true : undefined,
+		(ws) => {
+			const l = label(ws);
+			return !panel(ws) && l !== undefined && noSlash(expand(l, home)) === out ? true : undefined;
+		},
 		(ws) => `Export to: shows "${label(ws) ?? "nothing"}", not the job's folder ${out}`,
 	);
 }
@@ -248,38 +310,49 @@ function pick(out: string, ext: string): string | null {
 }
 
 async function exportTo(deps: ExportDeps, t: ExportTimeouts, id: number, out: string, ext: string) {
-	const open = dialogs(await windows(deps.ax));
+	const open = (await look(deps.ax, 1)).windows;
 	if (open.length !== 1 || open[0]?.AXTitle !== EXPORT)
 		throw new StepError(
 			"export",
 			`won't press OK with these open: ${open.map(titleOf).join(", ") || "nothing"}`,
 		);
-	await ax(deps.ax, "press", "--title", "OK", "--role", "AXButton");
+	await press(deps.ax, "--title", "OK", "--role", "AXButton");
 	const got = await settled(() => pick(out, ext), t.exportMs, `${ext} file`, t.pollMs);
 	if (!(await inFront(deps.dorico, id)))
 		throw new StepError("export", "focus moved to another project while exporting");
 	return got;
 }
 
+/** Escape into Dorico (brought forward first: MacBenchAX types only into it). */
+async function pressEscape(deps: ExportDeps, t: ExportTimeouts) {
+	await deps.activate().catch(() => {});
+	await ax(deps.ax, "keys", "--combo", "escape").catch(() => {});
+	await Bun.sleep(t.settleMs);
+}
+
 /**
- * Cancel every dialog Dorico has open: up to four rounds of `dismiss`, from
- * the second with Escape too. Returns what is still open, as an error, or null.
+ * Cancel every dialog Dorico has open and close an open menu: up to four
+ * rounds of `dismiss` (Escape first for a menu), from the second with Escape
+ * too, which closes what has no Cancel (the Go to Folder sheet). Returns
+ * what is still open, as an error, or null.
  */
 async function failsafe(deps: ExportDeps, t: ExportTimeouts): Promise<string | null> {
 	try {
 		for (let round = 0; round < 4; round++) {
-			if (dialogs(await windows(deps.ax, 1)).length === 0) return null;
+			const now = await look(deps.ax, 1);
+			if (now.menuOpen !== null) await pressEscape(deps, t);
+			if (now.windows.length === 0) {
+				if (now.menuOpen === null) return null;
+				continue;
+			}
 			await ax(deps.ax, "dismiss").catch(() => {});
 			await Bun.sleep(t.settleMs);
-			if (round > 0 && dialogs(await windows(deps.ax, 1)).length > 0) {
-				await deps.activate().catch(() => {});
-				await ax(deps.ax, "keys", "--combo", "escape").catch(() => {});
-				await Bun.sleep(t.settleMs);
-			}
+			if (round > 0 && (await look(deps.ax, 1)).windows.length > 0) await pressEscape(deps, t);
 		}
-		const left = dialogs(await windows(deps.ax, 1));
-		return left.length
-			? `a Dorico dialog is still open: ${left.map(titleOf).join(", ")}; dismiss it by screen sharing`
+		const left = await look(deps.ax, 1);
+		const things = openThings(left);
+		return things.length
+			? `a Dorico dialog is still open: ${things.join(", ")}; dismiss it by screen sharing`
 			: null;
 	} catch (e) {
 		return `couldn't check Dorico for open dialogs (${(e as Error).message}); look by screen sharing`;
@@ -291,6 +364,29 @@ const fail = (r: ExportResult, step: Step, message: string): ExportResult =>
 	r.ok
 		? { name: r.name, ok: false, step, message }
 		: { ...r, message: r.message.includes(message) ? r.message : `${r.message}; ${message}` };
+
+/** Before anything: MacBenchAX trusted, and Dorico showing no dialog or menu. */
+async function preflight(deps: ExportDeps): Promise<{ step: Step; message: string } | null> {
+	try {
+		if ((await deps.ax.run(["trusted"])).trusted !== true)
+			return { step: "ax", message: NOT_TRUSTED };
+	} catch (e) {
+		return { step: "ax", message: (e as Error).message };
+	}
+	try {
+		const now = await look(deps.ax, 1);
+		const things = openThings(now);
+		// Not cancelled: it may be someone's. A job's own is cancelled by its failsafe.
+		if (things.length)
+			return {
+				step: "preflight",
+				message: `a dialog is already open in Dorico: ${things.join(", ")}; close it (by screen sharing) and try again`,
+			};
+	} catch (e) {
+		return { step: "ax", message: (e as Error).message };
+	}
+	return null;
+}
 
 /** One file through Dorico's MusicXML export. Never throws: a failure names the step that stopped. */
 export async function exportFile(
@@ -308,14 +404,11 @@ export async function exportFile(
 			step: "check",
 			message: "not MusicXML (no <score-partwise> or <score-timewise>)",
 		};
-	try {
-		if ((await deps.ax.run(["trusted"])).trusted !== true)
-			return { name, ok: false, step: "ax", message: NOT_TRUSTED };
-	} catch (e) {
-		return { name, ok: false, step: "ax", message: (e as Error).message };
-	}
+	const stop = await preflight(deps);
+	if (stop) return { name, ok: false, ...stop };
 	const dir = jobDir(workDir);
-	const out = join(dir, "out");
+	// A leaf unique to the job: "Where:" naming it can't be an earlier job's folder.
+	const out = join(dir, `out-${basename(dir)}`);
 	mkdirSync(join(dir, "in"));
 	mkdirSync(out);
 	const path = join(dir, "in", safeName(name));
@@ -327,13 +420,9 @@ export async function exportFile(
 		const project = await as("open", () => open(deps.dorico, path, t.openMs));
 		id = project;
 		await as("focus", () => focus(deps.dorico, project));
-		await as("dialog", async () => {
-			await deps.activate();
-			await ax(deps.ax, "menu", "--path", MENU);
-			await exportDialog(deps.ax, t, "dialog");
-		});
+		await as("dialog", () => openExport(deps, t));
 		await as("options", () => options(deps.ax, t, format));
-		await as("folder", () => folder(deps.ax, t, out, deps.activate));
+		await as("folder", () => folder(deps, t, out));
 		const got = await as("export", () => exportTo(deps, t, project, out, ext));
 		result = { name, ok: true, file: got.bytes, exported: basename(got.path) };
 	} catch (e) {
@@ -353,6 +442,9 @@ export async function exportFile(
 				result = fail(result, "close", (e as Error).message);
 			}
 	}
-	if (result.ok) rmSync(dir, { recursive: true, force: true });
+	if (result.ok) {
+		await Bun.sleep(t.settleMs); // a straggling second file from Dorico lands before the folder goes
+		rmSync(dir, { recursive: true, force: true });
+	}
 	return result;
 }

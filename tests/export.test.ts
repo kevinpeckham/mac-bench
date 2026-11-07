@@ -72,7 +72,11 @@ describe("exportFile", () => {
 		expect(activations[0]).toBeLessThanOrEqual(menuAt);
 		// only the folder path is ever typed
 		expect(ax.log.filter((a) => a[0] === "set")).toHaveLength(1);
-		expect(ax.log.find((a) => a[0] === "set")?.at(-1)).toMatch(/\/out\/$/);
+		expect(ax.log.find((a) => a[0] === "set")?.at(-1)).toMatch(/\/out-[\w-]+\/$/);
+		// never into the document window, never its decoy buttons
+		for (const a of ax.log.filter((a) => ["dump", "press", "set"].includes(a[0] as string)))
+			expect(a).toContain("--dialogs");
+		expect(ax.decoysPressed).toEqual([]);
 		expect(closes(fake)).toHaveLength(1);
 		expect(fake.projects.size).toBe(0);
 		expect(jobFolders(work)).toEqual([]);
@@ -133,6 +137,7 @@ describe("exportFile", () => {
 		const { fake, ax, deps, work } = await setup({ dialogAppears: false });
 		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
 		expect(r).toMatchObject({ ok: false, step: "dialog" });
+		expect(ax.log.filter((a) => a[0] === "menu")).toHaveLength(2); // tried again once
 		if (!r.ok) {
 			expect(r.message).toContain("Export MusicXML");
 			expect(r.message).not.toContain("left open");
@@ -168,7 +173,7 @@ describe("exportFile", () => {
 		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
 		expect(r).toMatchObject({ ok: false, step: "folder" });
 		if (!r.ok) {
-			expect(r.message).toContain("a Dorico dialog is still open: Export MusicXML, Open");
+			expect(r.message).toContain("a Dorico dialog is still open: Open, Export MusicXML");
 			expect(r.message).toContain("screen sharing");
 			expect(r.message).toContain("left open");
 		}
@@ -276,6 +281,106 @@ describe("exportFile", () => {
 		};
 		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
 		expect(r.ok).toBe(true);
-		expect(pressedOkWith).toEqual([["Hymn - Full score", "Export MusicXML"]]);
+		expect(pressedOkWith).toEqual([["Export MusicXML", "Hymn - Full score"]]);
+		// the guard just before OK reads the windows only (depth 1)
+		const okAt = ax.log.findIndex((a) => a[0] === "press" && a.includes("OK"));
+		const guard = ax.log.slice(0, okAt).findLast((a) => a[0] === "dump");
+		expect(guard?.[guard.indexOf("--depth") + 1]).toBe("1");
+	});
+
+	test("a floating palette (Mixer) is not a dialog: the job goes through", async () => {
+		const { fake, ax, deps, work } = await setup({ palette: true });
+		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		expect(r.ok).toBe(true);
+		expect(ax.log.some((a) => a[0] === "dismiss")).toBe(false);
+		expect(closes(fake)).toHaveLength(1);
+	});
+
+	test("a dialog already open: fails fast before opening anything", async () => {
+		const { fake, ax, deps, work } = await setup();
+		ax.exportOpen = true; // say, a stuck one from an earlier job
+		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: false, step: "preflight" });
+		if (!r.ok) expect(r.message).toContain("a dialog is already open in Dorico: Export MusicXML");
+		expect(fake.commandsReceived).toEqual([]);
+		expect(commands(ax).map((a) => a[0])).toEqual(["trusted"]);
+		expect(ax.exportOpen).toBe(true); // not ours to cancel
+	});
+
+	test("a dialog stuck after one job never hands its export to the next", async () => {
+		const { fake, ax, deps, work } = await setup({ stuck: "Export MusicXML" });
+		await exportFile(deps, { name: "a.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		ax.exportOpen = true; // job A's dialog, still up (it won't cancel)
+		const b = await exportFile(deps, { name: "b.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		expect(b).toMatchObject({ ok: false, step: "preflight" });
+		expect(fake.commandsReceived.filter((c) => c.startsWith("File.Open"))).toHaveLength(1);
+		expect(ax.log.filter((a) => a[0] === "menu")).toHaveLength(1);
+	});
+
+	test("a menu left dropped down: Escape closes it and the menu is tried once more", async () => {
+		const { ax, deps, work } = await setup({ menuSticksOnce: true });
+		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		expect(r.ok).toBe(true);
+		expect(ax.log.filter((a) => a[0] === "menu")).toHaveLength(2);
+		const menus = ax.log.flatMap((a, i) => (a[0] === "menu" ? [i] : []));
+		const esc = ax.log.findIndex((a) => a[0] === "keys" && a.includes("escape"));
+		expect(esc).toBeGreaterThan(menus[0] as number);
+		expect(esc).toBeLessThan(menus[1] as number);
+		expect(ax.menuOpen).toBeNull();
+	});
+
+	test("the failsafe closes a menu left open", async () => {
+		const { ax, deps, work } = await setup({ menuSticksOnce: true, dialogAppears: false });
+		const run = ax.run.bind(ax);
+		ax.run = async (a) => {
+			const r = await run(a);
+			if (a[0] === "menu") ax.menuOpen = "File"; // every press leaves it open
+			return r;
+		};
+		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: false, step: "dialog" });
+		if (!r.ok) expect(r.message).not.toContain("still open");
+		expect(ax.menuOpen).toBeNull();
+	});
+
+	test("the path doesn't take in the sheet: no Return; the Escape round closes the sheet", async () => {
+		const { fake, ax, deps, work } = await setup({ setTakes: false });
+		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: false, step: "folder" });
+		if (!r.ok) expect(r.message).toContain("Go to Folder");
+		expect(ax.log.some((a) => a[0] === "keys" && a.includes("return"))).toBe(false);
+		// dismiss can't close the sheet (no Cancel): Escape did, then dismiss the rest
+		expect(ax.log.filter((a) => a[0] === "dismiss").length).toBeGreaterThan(1);
+		expect(ax.log.some((a) => a[0] === "keys" && a.includes("escape"))).toBe(true);
+		expect([ax.sheet, ax.openPanel, ax.exportOpen]).toEqual([false, false, false]);
+		expect(closes(fake)).toHaveLength(1);
+		expect(ax.decoysPressed).toEqual([]);
+	});
+
+	test("a flow titled Full score is never toggled for the layout", async () => {
+		const { ax, deps, work } = await setup({
+			flows: ["Full score"],
+			initial: { "Full score": 0 }, // the layout
+		});
+		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		expect(r.ok).toBe(true);
+		expect(ax.boxes["flow:Full score"]).toBe(1);
+		expect(ax.boxes["layout:Full score"]).toBe(1);
+		const press = ax.log.find((a) => a[0] === "press" && a.includes("Full score"));
+		expect(press).toContain("--after");
+	});
+
+	test('"Export to:" shown as ~/… still matches the job\'s folder', async () => {
+		const { ax, deps, work } = await setup();
+		const home = join(work, "..");
+		ax.tildeHome = home;
+		const r = await exportFile(
+			{ ...deps, home },
+			{ name: "h.musicxml", xml: SCORE },
+			"musicxml",
+			work,
+			FAST,
+		);
+		expect(r.ok).toBe(true);
 	});
 });

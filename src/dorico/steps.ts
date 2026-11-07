@@ -11,6 +11,7 @@ import type { DoricoClient } from "./client.js";
 export type Step =
 	| "check"
 	| "ax"
+	| "preflight"
 	| "open"
 	| "focus"
 	| "dialog"
