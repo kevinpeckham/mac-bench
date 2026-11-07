@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { macBenchAx } from "../src/ax/client.js";
@@ -81,5 +81,33 @@ describe("macBenchAx", () => {
 		});
 		await ax.run(["trusted"]);
 		expect(existsSync(dir)).toBe(true);
+	});
+
+	test("leftover answers from an earlier run are removed at start", () => {
+		const dir = work();
+		mkdirSync(join(dir, "answers"));
+		writeFileSync(join(dir, "answers", "answer-1-2-3.json"), "{}");
+		writeFileSync(join(dir, "answers", "answer-1-2-4.json.part"), "{");
+		macBenchAx("/A.app", dir, { spawn: async () => 0 });
+		expect(readdirSync(join(dir, "answers"))).toEqual([]);
+	});
+
+	test("an answer that arrives after the time limit is removed", async () => {
+		const dir = work();
+		let out = "";
+		const ax = macBenchAx("/A.app", dir, {
+			spawn: async (cmd) => {
+				out = cmd[cmd.indexOf("--out") + 1] as string;
+				setTimeout(() => writeFileSync(out, "{}"), 80);
+				return 0;
+			},
+			timeoutMs: 40,
+			pollMs: 5,
+		});
+		await expect(ax.run(["dump"])).rejects.toThrow(/no answer/);
+		await Bun.sleep(60);
+		expect(existsSync(out)).toBe(true); // it came late
+		await Bun.sleep(150);
+		expect(existsSync(out)).toBe(false);
 	});
 });

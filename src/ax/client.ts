@@ -9,10 +9,30 @@
  * `answers/` folder. It is never told which app by name: it acts on
  * Dorico's bundle ID, its only allowed app, by default.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 export type AxClient = { run(args: string[]): Promise<Record<string, unknown>> };
+
+/** An element as MacBenchAX's `dump` describes it. */
+export type AxNode = {
+	AXRole?: string;
+	AXSubrole?: string;
+	AXTitle?: string;
+	AXValue?: unknown;
+	AXIdentifier?: string;
+	AXDescription?: string;
+	children?: AxNode[];
+};
+
+/**
+ * What counts as a dialog: the subroles MacBenchAX's `dismiss` and
+ * `--dialogs` treat as one (ax/main.swift, isDialog). Floating windows (a
+ * Mixer, a Key Editor) are not dialogs.
+ */
+export const DIALOG_SUBROLES: readonly string[] = ["AXDialog", "AXSystemDialog"];
+
+export const isDialog = (w: AxNode) => DIALOG_SUBROLES.includes(w.AXSubrole ?? "");
 
 export type AxOptions = {
 	/** Run a command and resolve with its exit code (default: Bun.spawn). */
@@ -32,9 +52,12 @@ export function macBenchAx(appPath: string, workDir: string, opts: AxOptions = {
 	const run = opts.spawn ?? spawn;
 	const timeoutMs = opts.timeoutMs ?? 10_000;
 	const pollMs = opts.pollMs ?? 50;
+	const answers = join(workDir, "answers");
+	// Answers that came too late for an earlier run of the helper.
+	if (existsSync(answers))
+		for (const f of readdirSync(answers)) rmSync(join(answers, f), { force: true });
 	return {
 		async run(args) {
-			const answers = join(workDir, "answers");
 			mkdirSync(answers, { recursive: true, mode: 0o700 });
 			const out = join(answers, `answer-${process.pid}-${Date.now()}-${seq++}.json`);
 			const what = args[0] ?? "(no command)";
@@ -44,10 +67,18 @@ export function macBenchAx(appPath: string, workDir: string, opts: AxOptions = {
 				throw new Error(`couldn't launch MacBenchAX (${appPath}): open exited ${code}`);
 			const end = Date.now() + timeoutMs;
 			while (!existsSync(out) && Date.now() < end) await Bun.sleep(pollMs);
-			if (!existsSync(out))
+			if (!existsSync(out)) {
+				// Should it come after all, don't leave it lying there.
+				const tidy = () => {
+					rmSync(out, { force: true });
+					rmSync(`${out}.part`, { force: true });
+				};
+				tidy();
+				setTimeout(tidy, 3 * timeoutMs).unref();
 				throw new Error(
 					`MacBenchAX gave no answer to ${what} within ${timeoutMs} ms; is it built (scripts/build-ax.ts), and is its work folder inside ~/Library/Application Support/mac-bench?`,
 				);
+			}
 			try {
 				return JSON.parse(readFileSync(out, "utf8")) as Record<string, unknown>;
 			} catch {
