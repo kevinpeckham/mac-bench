@@ -96,6 +96,13 @@ describe("exportFile", () => {
 		expect(ax.toggled).toEqual([FOLDER, SEPARATE]);
 	});
 
+	test("a lost ⌘⇧G: pressed once more, then the folder is set", async () => {
+		const { ax, deps, work } = await setup({ goToLostOnce: true });
+		const r = await exportFile(deps, { name: "hymn.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: true });
+		expect(ax.log.filter((a) => a[0] === "keys" && a.includes("cmd+shift+g"))).toHaveLength(2);
+	});
+
 	test("nothing toggled when the dialog is already as wanted", async () => {
 		const { ax, deps, work } = await setup({ initial: { [SEPARATE]: 0, [FOLDER]: 0 } });
 		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);

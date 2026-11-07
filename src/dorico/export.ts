@@ -269,13 +269,21 @@ async function folder(deps: ExportDeps, t: ExportTimeouts, out: string) {
 	await press(client, t, "--title", FOLDER_BUTTON, "--role", "AXButton");
 	const panel = (ws: AxNode[]) => dialog(ws, "Open");
 	await waitFor(client, t, "folder", panel, () => "the folder picker (Open) didn't show");
-	await keys("cmd+shift+g");
 	const field = (ws: AxNode[]) => {
 		const p = panel(ws);
 		const s = p && flat(p).find((n) => n.AXRole === "AXSheet");
 		return s && flat(s).find((n) => n.AXRole === "AXTextField");
 	};
-	await waitFor(client, t, "folder", field, () => "the Go to Folder sheet didn't show");
+	// The panel can show before it takes keys, and the first ⌘⇧G is lost (FINDINGS): once more.
+	for (let attempt = 1; ; attempt++) {
+		await keys("cmd+shift+g");
+		try {
+			await waitFor(client, t, "folder", field, () => "the Go to Folder sheet didn't show");
+			break;
+		} catch (e) {
+			if (attempt > 1) throw e;
+		}
+	}
 	await ax(client, "set", "--dialogs", "--sheet", "--value", `${out}/`);
 	// Return only into the sheet, holding the path: without it, Return would be
 	// the Open panel's Choose (Dorico's remembered folder) or the dialog's OK.

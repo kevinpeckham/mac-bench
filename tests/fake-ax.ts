@@ -68,6 +68,8 @@ export type FakeAxOptions = {
 	 * many looks or presses, as Dorico's were live while Qt rebuilt the dialog.
 	 */
 	rebuildLooks?: number;
+	/** The first ⌘⇧G is lost (the Open panel not yet taking keys), as it was once live. */
+	goToLostOnce?: boolean;
 };
 
 const DEFAULTS: Record<string, 0 | 1> = {
@@ -102,6 +104,7 @@ export class FakeAx implements AxClient {
 	private menus = 0;
 	/** Presses left that find nothing while the dialog rebuilds (FakeAxOptions.rebuildLooks). */
 	private rebuilding = 0;
+	private goToLost = false;
 	/** Indexes in `log` of presses that found nothing. */
 	private readonly missed = new Set<number>();
 	private readonly actions = new WeakMap<AxNode, () => void>();
@@ -120,6 +123,7 @@ export class FakeAx implements AxClient {
 			layouts: ["Full score", "01_Voice"],
 			palette: false,
 			rebuildLooks: 0,
+			goToLostOnce: false,
 			...opts,
 			stuck: opts.stuck ?? null,
 		};
@@ -215,8 +219,10 @@ export class FakeAx implements AxClient {
 	private keys(combo: string): Record<string, unknown> {
 		if (this.front !== DORICO)
 			return { error: "the frontmost app isn't one MacBenchAX may type into" };
-		if (combo === "cmd+shift+g" && this.openPanel && !this.sheet) this.sheet = true;
-		else if (combo === "return" && this.sheet) {
+		if (combo === "cmd+shift+g" && this.openPanel && !this.sheet) {
+			if (this.o.goToLostOnce && !this.goToLost) this.goToLost = true;
+			else this.sheet = true;
+		} else if (combo === "return" && this.sheet) {
 			this.sheet = false;
 			if (this.o.folderTakes) this.where = basename(this.sheetValue.replace(/\/+$/, ""));
 		} else if (combo === "return" && this.openPanel) {
