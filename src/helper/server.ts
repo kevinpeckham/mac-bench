@@ -19,6 +19,8 @@ export type ServerOptions = {
 	queue: JobQueue;
 	/** MacBenchAX, for /health's `ax.trusted`. */
 	ax: AxClient;
+	/** How long /health keeps `ax.trusted` (default 30 s). */
+	axCacheMs?: number;
 	/** The largest request accepted (default 20 MB). */
 	maxBytes?: number;
 };
@@ -60,15 +62,29 @@ const wire = (r: JobResult) => {
 	return { ...r, file: Buffer.from(r.file).toString("base64") };
 };
 
-/** Whether MacBenchAX is granted Accessibility; no answer counts as no. */
-const axTrusted = (ax: AxClient) =>
-	ax.run(["trusted"]).then(
-		(r) => r.trusted === true,
-		() => false,
-	);
+/**
+ * Whether MacBenchAX is granted Accessibility; no answer counts as no.
+ * Asked at most once per `ms`: each ask launches the app (and a missing one
+ * takes the client's whole time limit).
+ */
+function axTrusted(ax: AxClient, ms: number): () => Promise<boolean> {
+	let last: { at: number; trusted: Promise<boolean> } | null = null;
+	return () => {
+		if (!last || Date.now() - last.at > ms)
+			last = {
+				at: Date.now(),
+				trusted: ax.run(["trusted"]).then(
+					(r) => r.trusted === true,
+					() => false,
+				),
+			};
+		return last.trusted;
+	};
+}
 
 export function startServer(opts: ServerOptions): { url: string; stop(): void } {
 	const maxBytes = opts.maxBytes ?? MAX_BYTES;
+	const trusted = axTrusted(opts.ax, opts.axCacheMs ?? 30_000);
 	const server = Bun.serve({
 		hostname: opts.hostname,
 		port: opts.port,
@@ -85,7 +101,7 @@ export function startServer(opts: ServerOptions): { url: string; stop(): void } 
 					variant: opts.client.version?.variant ?? null,
 					version: opts.client.version?.number ?? null,
 					queue: opts.queue.length,
-					ax: { trusted: await axTrusted(opts.ax) },
+					ax: { trusted: await trusted() },
 				});
 			if (req.method === "POST" && pathname === "/jobs") return jobs(req, opts, maxBytes);
 			return json({ error: "not found" }, 404);

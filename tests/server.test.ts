@@ -234,4 +234,10 @@ describe("the helper", () => {
 			c.findLastIndex((x) => x.startsWith("File.Open")),
 		);
 	});
+
+	test("health asks MacBenchAX at most once in 30 s", async () => {
+		const { url, ax } = await helper();
+		for (let i = 0; i < 3; i++) await fetch(`${url}/health`, { headers: auth });
+		expect(ax.log.filter((a) => a[0] === "trusted")).toHaveLength(1);
+	});
 });

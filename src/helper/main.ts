@@ -29,8 +29,14 @@ client.start();
 
 // MacBenchAX answers only inside WORK (ax/main.swift), here in WORK/ax/answers.
 const ax = macBenchAx(join(WORK, "ax/MacBenchAX.app"), join(WORK, "ax"));
-/** Dorico to the front: MacBenchAX types only into Dorico, and keys go to the frontmost app. */
+/**
+ * Dorico to the front: MacBenchAX types only into Dorico, and keys go to the
+ * frontmost app. `open -a` would also launch Dorico if it weren't running,
+ * so this runs only while Remote Control is connected (the export job calls
+ * it only after opening its file that way): keep that order.
+ */
 const activate = async () => {
+	if (client.state !== "connected") throw new Error("Dorico isn't connected; not bringing it forward");
 	await Bun.spawn(["open", "-a", "Dorico 6"], { stdout: "ignore", stderr: "ignore" }).exited;
 	await Bun.sleep(300); // the switch lands a moment after open returns
 };
