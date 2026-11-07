@@ -63,6 +63,11 @@ export type FakeAxOptions = {
 	layouts?: string[];
 	/** A floating palette window (as Dorico's Mixer is) beside the document. */
 	palette?: boolean;
+	/**
+	 * After a checkbox is toggled, the dialog's checkboxes are missing for this
+	 * many looks or presses, as Dorico's were live while Qt rebuilt the dialog.
+	 */
+	rebuildLooks?: number;
 };
 
 const DEFAULTS: Record<string, 0 | 1> = {
@@ -95,6 +100,10 @@ export class FakeAx implements AxClient {
 	onRun: ((args: string[]) => void) | null = null;
 	private readonly o: Options;
 	private menus = 0;
+	/** Presses left that find nothing while the dialog rebuilds (FakeAxOptions.rebuildLooks). */
+	private rebuilding = 0;
+	/** Indexes in `log` of presses that found nothing. */
+	private readonly missed = new Set<number>();
 	private readonly actions = new WeakMap<AxNode, () => void>();
 
 	constructor(opts: FakeAxOptions = {}) {
@@ -110,6 +119,7 @@ export class FakeAx implements AxClient {
 			flows: ["Hymn"],
 			layouts: ["Full score", "01_Voice"],
 			palette: false,
+			rebuildLooks: 0,
 			...opts,
 			stuck: opts.stuck ?? null,
 		};
@@ -129,10 +139,10 @@ export class FakeAx implements AxClient {
 		}
 	}
 
-	/** The `press` commands for checkboxes, by title. */
+	/** The `press` commands for checkboxes that found one, by title. */
 	get toggled(): string[] {
 		return this.log
-			.filter((a) => a[0] === "press" && a.includes("AXCheckBox"))
+			.filter((a, i) => a[0] === "press" && a.includes("AXCheckBox") && !this.missed.has(i))
 			.map((a) => a[a.indexOf("--title") + 1] as string);
 	}
 
@@ -166,6 +176,11 @@ export class FakeAx implements AxClient {
 			case "menu":
 				return this.menu(arg("--path") ?? "");
 			case "press":
+				if (this.rebuilding > 0) {
+					this.rebuilding--;
+					this.missed.add(this.log.length - 1);
+					return { error: `nothing titled ${arg("--title") ?? ""}` };
+				}
 				return this.press(arg("--title") ?? "", arg("--role"), arg("--after"), scoped);
 			case "set": {
 				if (!args.includes("--sheet")) return { error: "no text field 0" };
@@ -285,6 +300,7 @@ export class FakeAx implements AxClient {
 			{ AXRole: "AXCheckBox", AXTitle: title, AXValue: this.boxes[key] ?? 0 },
 			() => {
 				if (enabled()) this.boxes[key] = this.boxes[key] ? 0 : 1;
+				this.rebuilding = this.o.rebuildLooks;
 			},
 		);
 	}

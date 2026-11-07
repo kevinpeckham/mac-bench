@@ -111,7 +111,25 @@ async function look(client: AxClient, depth = 12): Promise<Seen> {
 }
 
 /** Press in Dorico's dialogs only. */
-const press = (client: AxClient, ...args: string[]) => ax(client, "press", "--dialogs", ...args);
+/**
+ * Press an element of Dorico's dialogs. Dorico rebuilds a dialog's
+ * accessibility tree after a checkbox changes, and for a moment finds
+ * nothing (FINDINGS): a press that finds nothing is tried again, for at
+ * most `dialogMs`.
+ */
+async function press(client: AxClient, t: ExportTimeouts, ...args: string[]) {
+	const end = Date.now() + t.dialogMs;
+	for (;;) {
+		const r = await client.run(["press", "--dialogs", ...args]);
+		const missing = typeof r.error === "string" && r.error.startsWith("nothing titled");
+		if (!missing || Date.now() >= end) {
+			if (typeof r.error === "string") throw new Error(`MacBenchAX press: ${r.error}`);
+			if (r.ok === false) throw new Error(`MacBenchAX press ${args.join(" ")} didn't take`);
+			return r;
+		}
+		await Bun.sleep(t.pollMs);
+	}
+}
 
 /** `n` and everything under it, in the order the dump lists them. */
 const flat = (n: AxNode, acc: AxNode[] = []): AxNode[] => {
@@ -212,6 +230,7 @@ async function options(client: AxClient, t: ExportTimeouts, format: ExportFormat
 		if (value(d, title, after) === want) continue;
 		await press(
 			client,
+			t,
 			"--title",
 			title,
 			"--role",
@@ -247,7 +266,7 @@ async function folder(deps: ExportDeps, t: ExportTimeouts, out: string) {
 		await deps.activate();
 		await ax(client, "keys", "--combo", combo);
 	};
-	await press(client, "--title", FOLDER_BUTTON, "--role", "AXButton");
+	await press(client, t, "--title", FOLDER_BUTTON, "--role", "AXButton");
 	const panel = (ws: AxNode[]) => dialog(ws, "Open");
 	await waitFor(client, t, "folder", panel, () => "the folder picker (Open) didn't show");
 	await keys("cmd+shift+g");
@@ -283,7 +302,7 @@ async function folder(deps: ExportDeps, t: ExportTimeouts, out: string) {
 		(ws) =>
 			`the folder picker didn't go to the job's folder (Where: shows "${String(where(ws)?.AXValue ?? "nothing")}")`,
 	);
-	await press(client, "--title", "Choose", "--role", "AXButton");
+	await press(client, t, "--title", "Choose", "--role", "AXButton");
 	const label = (ws: AxNode[]) => {
 		const d = dialog(ws, EXPORT);
 		const l = d && flat(d).find((n) => n.AXIdentifier?.endsWith("folderPathLabel"));
@@ -316,7 +335,7 @@ async function exportTo(deps: ExportDeps, t: ExportTimeouts, id: number, out: st
 			"export",
 			`won't press OK with these open: ${open.map(titleOf).join(", ") || "nothing"}`,
 		);
-	await press(deps.ax, "--title", "OK", "--role", "AXButton");
+	await press(deps.ax, t, "--title", "OK", "--role", "AXButton");
 	const got = await settled(() => pick(out, ext), t.exportMs, `${ext} file`, t.pollMs);
 	if (!(await inFront(deps.dorico, id)))
 		throw new StepError("export", "focus moved to another project while exporting");

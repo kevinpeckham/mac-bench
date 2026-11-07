@@ -89,6 +89,13 @@ describe("exportFile", () => {
 		expect(ax.toggled).toEqual([MXL, XML]);
 	});
 
+	test("checkboxes missing for a moment after a toggle: waited for, then pressed", async () => {
+		const { ax, deps, work } = await setup({ rebuildLooks: 2 });
+		const r = await exportFile(deps, { name: "hymn.musicxml", xml: SCORE }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: true });
+		expect(ax.toggled).toEqual([FOLDER, SEPARATE]);
+	});
+
 	test("nothing toggled when the dialog is already as wanted", async () => {
 		const { ax, deps, work } = await setup({ initial: { [SEPARATE]: 0, [FOLDER]: 0 } });
 		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
