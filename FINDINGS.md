@@ -21,6 +21,15 @@ files already exist" (Create New / Overwrite). Cause: no export command
 takes a folder; Dorico writes `01 - Full score - <title>.pdf` beside the
 MusicXML it opened. Fix: a fresh, empty folder per file (`src/dorico/job.ts`).
 
+### Remote Control can't export MusicXML (but Accessibility can)
+
+Symptom: no way to get MusicXML out of Dorico through Remote Control:
+`File.Save?File=` is ignored (above), and `File.Export` lists no filter
+IDs to choose MusicXML with. Fix: the export job answers Dorico's own
+Export MusicXML dialog through macOS Accessibility instead; see
+"Dorico's MusicXML export, through Accessibility" below
+(`src/dorico/export.ts`).
+
 ### With a project open, a new one is announced without `hasScore`
 
 Symptom (final review, then `tests/recordings/two-projects.log`): every job
@@ -66,6 +75,131 @@ Symptom: after `File.CloseProject?OpenScoreID=35&Save=false` Dorico pushed
 `{"activeOpenScoreID":35,…,"hasScore":false}`. Cause: the push carries the
 last active ID. Fix: confirm a close with a fresh `getstatus`, whose
 `activeOpenScoreID` is gone or another project's.
+
+## Dorico's MusicXML export, through Accessibility (macOS 27.2, 2026-11-07)
+
+### Dorico's own dialogs can be driven unattended
+
+Symptom: the spike drove File > Export > MusicXML... through MacBenchAX
+(`ax/main.swift`) for five files with no one at the Mac. What it found:
+the menu item is titled `MusicXML...` (three ASCII dots); the dialog is an
+`AXDialog` titled `Export MusicXML` with checkboxes `Export compressed XML
+(.mxl)`, `Export uncompressed XML (.musicxml)`, one per flow (under
+"Select flows to export:"), `Export layouts as separate files`, one per
+layout (`Full score`, `01_Voice`, …) and `Create folder for exported
+files`; its "Export to:" label's identifier ends `folderPathLabel`. The
+folder button is titled with a private-use glyph (U+E0C8; identifier ends
+`chooseFolderPathPushButton`) and opens a standard Open panel: Cmd-Shift-G
+gives a sheet whose one text field takes a path, Return goes there (the
+`Where:` pop-up then names the folder) and Choose sets "Export to:". With
+Dorico 6.2's defaults the export went into a `Flows from <project>`
+folder, one file per layout (`Hymn - Full score - 01 Hymn.musicxml`,
+`Hymn - 01_Voice - 01 Hymn.musicxml`). Fix: the job turns "Create folder"
+and "separate files" off and "Full score" on, pressing a checkbox only when
+it differs, re-reads them, and takes the `Full score` file if Dorico still
+writes several (`src/dorico/export.ts`).
+
+### An ad-hoc signed app's Accessibility grant is tied to the build that asked
+
+Symptom: the spike rebuilt MacBenchAX after its first `trusted` check; the
+toggle in System Settings stayed on but `AXIsProcessTrusted` stayed false.
+tccd logged "Failed to match existing code requirement for subject
+dev.lj.mac-bench.ax". Cause: an ad-hoc signature has no stable identity,
+so the grant records the first build's code hash. Fix:
+`tccutil reset Accessibility dev.lj.mac-bench.ax`, `request` from the build
+in place, grant again; and never rebuild casually: `scripts/build-ax.ts`
+refuses to replace a built app without `--rebuild`, and then prints these
+steps.
+
+### macOS 27 moved Accessibility
+
+Symptom: Accessibility isn't where macOS 15 kept it. Cause: macOS 27 has
+it under System Settings > Privacy & Security > Device Control and Data
+Access. Fix: MacBenchAX's own `request` (AXIsProcessTrustedWithOptions with
+the prompt) adds it to the list and opens the right pane.
+
+### Dorico's running-app name is "Dorico", not "Dorico 6"
+
+Symptom: an app looked up by the name it is installed under, "Dorico 6",
+isn't running as far as `NSRunningApplication.localizedName` goes. Cause:
+the bundle is `Dorico 6.app` (so `open -a "Dorico 6"` works) but the
+running app calls itself "Dorico"; its bundle ID is `com.steinberg.dorico6`.
+Fix: MacBenchAX now finds it by bundle ID (next entry); the helper brings it
+forward with `open -a "Dorico 6"` (`src/helper/main.ts`).
+
+### `open -W` can't wait for an app that exits at once
+
+Symptom: "Unable to block on application" from `open -W -a MacBenchAX.app`.
+Cause: MacBenchAX answers and exits before `open` can watch it. Fix: wait
+for its answer file instead, bounded (10 s), then read and delete it
+(`src/ax/client.ts`); `open -n` so each call is a new instance even if the
+last one hasn't quite gone.
+
+### MacBenchAX narrowed after a security review (2026-11-07)
+
+Symptom: as spiked, MacBenchAX acted on any app named by `--app`, posted
+keys to whatever was frontmost, and wrote its answer wherever `--out`
+said; a program granted Accessibility can do a lot. Fix
+(`ax/main.swift`): `--app` is a bundle ID, allowlisted to
+`com.steinberg.dorico6` (the default), matched by bundle ID rather than
+name (a running app's name can be anything); `keys` refuses (exit 5, a JSON
+error) unless the frontmost app is allowlisted, so the job brings Dorico
+forward before every key step and treats a refusal as that step's failure;
+`--out` is required, even for `request`, and must be a `.json` file
+directly in `~/Library/Application Support/mac-bench/ax/answers/`
+(otherwise exit 65; a missing answers folder, or a link in its place, is
+exit 66; both say why on stderr and write nothing), its `.part` created
+exclusively and renamed into place, 0600; and
+`scripts/build-ax.ts` signs it with the hardened runtime
+(`codesign --options runtime`, no entitlements), so `DYLD_*` variables
+can't inject code into the process that holds the grant. Still
+true, and accepted: any program running as this user can launch it, so the
+grant's reach is only as narrow as the allowlist: Dorico, on a
+single-user Mac.
+
+### Review of the export job: what the fakes hid (2026-11-07)
+
+Symptom: a review found the job would have failed or misbehaved live in
+ways the tests passed: a floating window (Mixer, Key Editor) counted as a
+dialog, so OK was refused and the failsafe reported it every job; a
+dialog stuck from one job would have been taken by the next, which would
+have returned the earlier job's export; a menu left dropped down was
+invisible to the failsafe; Return sent after the Go to Folder sheet had
+gone would have been the Open panel's Choose (Dorico's remembered folder)
+or the dialog's OK; and the fake's `dismiss` closed the Go to Folder sheet,
+which the real one can't (the sheet has no Cancel), so the tests passed
+for the wrong reason. Cause: a fake more capable and more forgiving than
+the real thing, and TypeScript and Swift each with its own idea of a
+dialog. Fix: one rule (`DIALOG_SUBROLES`, `src/ax/client.ts`, matching
+main.swift's isDialog); a preflight that fails the job if anything is
+open; the menu retried once after Escape; Return only into the sheet
+holding the path; `--dialogs` on every look and press, so a document
+window's tree (with decoy OK and Cancel buttons in the fake) is never
+searched; and a fake that behaves exactly like main.swift
+(`tests/fake-ax.ts`). Rule: a fake of a UI is checked against the real
+program's code, not against what the spike happened to see.
+
+### The first live runs: three timing gaps the spike's pauses had hidden (2026-11-07)
+
+- **A checkbox missing right after another was toggled.** The first job
+  stopped at options with "nothing titled Export layouts as separate
+  files", although the dialog had it. Cause: after a checkbox changes,
+  Dorico (Qt) rebuilds the dialog's accessibility tree and for a moment
+  lists nothing in it; the spike waited over a second between steps, the
+  job didn't. Fix: a press that finds nothing is tried again until
+  `dialogMs` (`press` in `src/dorico/export.ts`; fake `rebuildLooks`).
+- **A lost ⌘⇧G.** One job in ten stopped at "the Go to Folder sheet
+  didn't show". Cause: the Open panel was listed before it took keys.
+  Fix: ⌘⇧G once more (fake `goToLostOnce`).
+- **Return that closed the sheet without going there.** Two jobs in three
+  stopped with "Where: shows Dorico Projects": the sheet held the path,
+  Return closed it, the panel stayed put. Cause: Return sent at once after
+  the path was set through Accessibility; with the spike's pause it
+  always went. Fix: `settleMs` before Return, and the Go to Folder step
+  once more if the panel stays put (fake `goToMissesOnce`). The Where:
+  and "Export to:" checks caught all three before OK, so nothing was
+  exported to a wrong folder. After the fixes: ten exports in a row (five
+  fixtures, `.mxl` and `.musicxml`), each identical to the spike's.
 
 ## Process
 

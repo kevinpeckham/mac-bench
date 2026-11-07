@@ -1,10 +1,10 @@
 /** `mac-bench <command>` on the VM; run through bin/mac-bench (varlock loads the environment). */
 import { ENV } from "varlock/env";
-import { dorico } from "./dorico.js";
+import { dorico, USAGE } from "./dorico.js";
 
 const [command, ...args] = process.argv.slice(2);
 if (command !== "dorico") {
-	console.error("usage: mac-bench dorico <file.musicxml…> [--out <dir>] | --health");
+	console.error(USAGE);
 	process.exit(2);
 }
 process.exit(

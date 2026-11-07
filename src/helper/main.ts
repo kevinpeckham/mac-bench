@@ -2,7 +2,9 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ENV } from "varlock/env";
+import { macBenchAx } from "../ax/client.js";
 import { DoricoClient } from "../dorico/client.js";
+import { type ExportFormat, exportFile } from "../dorico/export.js";
 import { type JobFile, JobQueue, pruneJobs, runFile } from "../dorico/job.js";
 import { startServer } from "./server.js";
 import { tailnetAddress } from "./tailnet.js";
@@ -25,9 +27,29 @@ const client = new DoricoClient({
 });
 client.start();
 
-const queue = new JobQueue(async (files: JobFile[]) => {
+// MacBenchAX answers only inside WORK (ax/main.swift), here in WORK/ax/answers.
+const ax = macBenchAx(join(WORK, "ax/MacBenchAX.app"), join(WORK, "ax"));
+/**
+ * Dorico to the front: MacBenchAX types only into Dorico, and keys go to the
+ * frontmost app. `open -a` would also launch Dorico if it weren't running,
+ * so this runs only while Remote Control is connected (the export job calls
+ * it only after opening its file that way): keep that order.
+ */
+const activate = async () => {
+	if (client.state !== "connected")
+		throw new Error("Dorico isn't connected; not bringing it forward");
+	await Bun.spawn(["open", "-a", "Dorico 6"], { stdout: "ignore", stderr: "ignore" }).exited;
+	await Bun.sleep(300); // the switch lands a moment after open returns
+};
+
+const queue = new JobQueue(async (files: JobFile[], format?: ExportFormat) => {
 	const results = [];
-	for (const file of files) results.push(await runFile(client, file, WORK));
+	for (const file of files)
+		results.push(
+			format
+				? await exportFile({ dorico: client, ax, activate }, file, format, WORK)
+				: await runFile(client, file, WORK),
+		);
 	return results;
 });
 
@@ -40,5 +62,6 @@ const server = startServer({
 	token: ENV.MAC_BENCH_TOKEN,
 	client,
 	queue,
+	ax,
 });
 console.log(`mac-bench helper on ${server.url}`);
