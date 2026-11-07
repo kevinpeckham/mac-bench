@@ -179,6 +179,28 @@ searched; and a fake that behaves exactly like main.swift
 (`tests/fake-ax.ts`). Rule: a fake of a UI is checked against the real
 program's code, not against what the spike happened to see.
 
+### The first live runs: three timing gaps the spike's pauses had hidden (2026-11-07)
+
+- **A checkbox missing right after another was toggled.** The first job
+  stopped at options with "nothing titled Export layouts as separate
+  files", although the dialog had it. Cause: after a checkbox changes,
+  Dorico (Qt) rebuilds the dialog's accessibility tree and for a moment
+  lists nothing in it; the spike waited over a second between steps, the
+  job didn't. Fix: a press that finds nothing is tried again until
+  `dialogMs` (`press` in `src/dorico/export.ts`; fake `rebuildLooks`).
+- **A lost ⌘⇧G.** One job in ten stopped at "the Go to Folder sheet
+  didn't show". Cause: the Open panel was listed before it took keys.
+  Fix: ⌘⇧G once more (fake `goToLostOnce`).
+- **Return that closed the sheet without going there.** Two jobs in three
+  stopped with "Where: shows Dorico Projects": the sheet held the path,
+  Return closed it, the panel stayed put. Cause: Return sent at once after
+  the path was set through Accessibility; with the spike's pause it
+  always went. Fix: `settleMs` before Return, and the Go to Folder step
+  once more if the panel stays put (fake `goToMissesOnce`). The Where:
+  and "Export to:" checks caught all three before OK, so nothing was
+  exported to a wrong folder. After the fixes: ten exports in a row (five
+  fixtures, `.mxl` and `.musicxml`), each identical to the spike's.
+
 ## Process
 
 ### A broad file search set off macOS's Photos permission prompt (2026-11-05)
