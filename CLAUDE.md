@@ -8,14 +8,20 @@ Design: `docs/superpowers/specs/2026-11-05-dorico-checks-design.md`.
 ## Layout
 
 - `src/dorico/`: the Remote Control client (`client.ts`, `protocol.ts`,
-  `token.ts`) and the job runner (`job.ts`)
+  `token.ts`), the steps jobs share (`steps.ts`), the PDF job (`job.ts`)
+  and the MusicXML export job (`export.ts`)
+- `ax/`: MacBenchAX (`main.swift`, `Info.plist`), the one app granted
+  Accessibility on the Mac; `src/ax/client.ts` launches it and reads its
+  answers (`AxClient`, injected everywhere so tests use `tests/fake-ax.ts`)
 - `src/helper/`: the HTTP helper that runs on the Mac (`main.ts` reads the
   environment; `server.ts` takes everything as arguments)
 - `src/cli/`: `bin/mac-bench dorico …`, run on the VM (the wrapper keeps the caller's folder; `bun run` would not)
-- `scripts/record.ts`: records real Dorico messages into `tests/recordings/`;
+- `scripts/build-ax.ts`: builds and signs MacBenchAX on the Mac;
+  `scripts/record.ts`: records real Dorico messages into `tests/recordings/`;
   `scripts/install-launchd.ts`: installs the helper as a launchd agent
 - `tests/fake-dorico.ts`: a fake Remote Control server reproducing the
-  recordings; every test runs against it, none needs Dorico or the env
+  recordings; `tests/fake-ax.ts` models Dorico's export dialogs as state;
+  every test runs against fakes, none needs Dorico, a Mac or the env
 
 ## Commands
 
@@ -23,7 +29,9 @@ Design: `docs/superpowers/specs/2026-11-05-dorico-checks-design.md`.
 bun test                                   # tests (no env, no Dorico)
 bun run check                              # Biome (tabs) and tsc
 bin/mac-bench dorico <file.musicxml…>      # on the VM, from any folder: PDFs into ./dorico-runs/
-bin/mac-bench dorico --health
+bin/mac-bench dorico --export musicxml|mxl <files…>   # Dorico's MusicXML export: <base>.dorico.musicxml|mxl
+bin/mac-bench dorico --health              # includes ax.trusted
+bun scripts/build-ax.ts [--rebuild]        # on the Mac: build MacBenchAX (then grant it: README)
 bun run helper                             # on the Mac (launchd runs this)
 ```
 
@@ -41,6 +49,15 @@ bun run helper                             # on the Mac (launchd runs this)
   `OP_ENV_ID` and `OP_TOKEN`; `MAC_BENCH_TOKEN` comes from the mac-bench
   1Password environment. Only the entry points (`src/*/main.ts`) import
   `varlock/env`.
+- MacBenchAX is never rebuilt without re-granting it: its ad-hoc grant is
+  tied to its build (FINDINGS). Change `ax/main.swift` only for a strong
+  reason; `build-ax.ts` refuses without `--rebuild`, then
+  `tccutil reset Accessibility dev.lj.mac-bench.ax` and grant again
+  (README). It acts only on Dorico by bundle ID, types only while Dorico is
+  frontmost, and answers only inside the work folder.
+- An export job types nothing but the folder path, presses OK only in
+  Export MusicXML, and always runs its failsafe (cancel every dialog) and
+  closes its project unsaved.
 - The repo is public: never commit a Dorico session token or any secret.
 - Test first; conventional commits with no Co-Authored-By or other AI
   trailer; a CHANGELOG `[Unreleased]` entry per user-visible change; a
