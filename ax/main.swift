@@ -1,9 +1,13 @@
 // MacBenchAX: the one program on the Mac granted Accessibility, so a job can
 // read and answer an app's dialogs. It is generic on purpose: an ad-hoc
 // signed app's grant is tied to its build (FINDINGS), so it changes rarely
-// and the job logic lives in TypeScript (src/ax/). Launched with
-// `open -a MacBenchAX.app --args <command> … --out <file.json>`, so macOS
-// makes it its own responsible process; every command writes JSON to --out.
+// and the job logic lives in TypeScript (src/ax/client.ts,
+// src/dorico/export.ts). Launched with
+// `open -n -a MacBenchAX.app --args <command> … --out <file.json>`, so macOS
+// makes it its own responsible process; every command writes JSON to --out,
+// which is required, even for request, and must be inside
+// ~/Library/Application Support/mac-bench/ (otherwise it exits 65 and
+// writes nothing).
 //
 //   trusted                          {"trusted": Bool}
 //   request                          ask macOS for the grant (its prompt)
@@ -11,9 +15,16 @@
 //   press --title T [--role R]       press the first element titled T
 //   set --value V (--field N | --sheet)  set a text field's value
 //   menu --path "A/B/C"              press a menu-bar item by titles
-//   keys --combo cmd+shift+g         post a key to the frontmost app
+//   keys --combo cmd+shift+g         post a key to the frontmost app (exit 5
+//                                    unless that app is in ALLOWED)
 //   dismiss                          press Cancel in every dialog and sheet
-// All but trusted and request take --app <name> (default "Dorico").
+// dump, press, set, menu and dismiss take --app <bundle ID> (default and
+// only allowed: com.steinberg.dorico6).
+// It acts only on the apps in ALLOWED, matched by bundle ID (a running
+// app's name can be anything), posts keys only while one of them is
+// frontmost, and writes its answer only inside the mac-bench work folder,
+// owner-only. Any program running as this user can still launch it: the Mac
+// is single-user, and the grant is kept that narrow on purpose.
 import AppKit
 import ApplicationServices
 import Foundation
@@ -23,13 +34,19 @@ func arg(_ name: String) -> String? {
 	guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
 	return args[i + 1]
 }
-let out = arg("--out") ?? NSTemporaryDirectory() + "macbenchax.json"
+let ALLOWED = ["com.steinberg.dorico6"]
+let WORK = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Application Support/mac-bench")
+let out: String = {
+	let given = (arg("--out").map { ($0 as NSString).standardizingPath }) ?? ""
+	guard given.hasPrefix(WORK + "/"), !given.contains("/../") else { exit(65) } // nowhere to answer
+	return given
+}()
 
 func finish(_ obj: [String: Any], code: Int32 = 0) -> Never {
 	let data = (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])) ?? Data()
 	// Write beside, then rename: the reader polls for the file and must never see half of it.
 	let tmp = out + ".part"
-	FileManager.default.createFile(atPath: tmp, contents: data)
+	FileManager.default.createFile(atPath: tmp, contents: data, attributes: [.posixPermissions: 0o600])
 	_ = try? FileManager.default.removeItem(atPath: out)
 	try? FileManager.default.moveItem(atPath: tmp, toPath: out)
 	exit(code)
@@ -79,7 +96,17 @@ let trusted = AXIsProcessTrustedWithOptions([prompt: false] as CFDictionary)
 if command == "trusted" { finish(["trusted": trusted]) }
 guard trusted else { finish(["trusted": false, "error": "not trusted"], code: 2) }
 
+/// The allowed app, running, matched by bundle ID.
+func target() -> NSRunningApplication? {
+	let id = arg("--app") ?? ALLOWED[0]
+	guard ALLOWED.contains(id) else { return nil }
+	return NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == id }
+}
+
 if command == "keys" {
+	guard let front = NSWorkspace.shared.frontmostApplication, let id = front.bundleIdentifier, ALLOWED.contains(id) else {
+		finish(["error": "the frontmost app isn't one MacBenchAX may type into"], code: 5)
+	}
 	let parts = (arg("--combo") ?? "").lowercased().split(separator: "+").map(String.init)
 	let codes: [String: CGKeyCode] = ["escape": 53, "return": 36, "tab": 48, "space": 49, "g": 5, "a": 0, "s": 1]
 	guard let key = parts.last, let code = codes[key] else { finish(["error": "unknown key"], code: 4) }
@@ -95,10 +122,10 @@ if command == "keys" {
 	finish(["keys": parts, "ok": true])
 }
 
-let appName = arg("--app") ?? "Dorico"
-guard let running = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == appName }) else {
-	finish(["error": "\(appName) not running"], code: 3)
+guard let running = target() else {
+	finish(["error": "\(arg("--app") ?? ALLOWED[0]) isn't allowed or isn't running"], code: 3)
 }
+let appName = running.localizedName ?? ""
 let app = AXUIElementCreateApplication(running.processIdentifier)
 let windows = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
 
