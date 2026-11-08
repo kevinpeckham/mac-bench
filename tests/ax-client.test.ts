@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { macBenchAx } from "../src/ax/client.js";
+import { AxNoAnswer, macBenchAx } from "../src/ax/client.js";
 
 const work = () => mkdtempSync(join(tmpdir(), "mac-bench-ax-"));
 
@@ -52,6 +52,16 @@ describe("macBenchAx", () => {
 		await expect(ax.run(["dump", "--depth", "1"])).rejects.toThrow(
 			/MacBenchAX gave no answer to dump/,
 		);
+	});
+
+	test("no answer is an AxNoAnswer (the command may have run); a launch failure is not", async () => {
+		const quiet = macBenchAx("/A.app", work(), { spawn: async () => 0, timeoutMs: 30, pollMs: 10 });
+		const late = await quiet.run(["keys", "--combo", "return"]).catch((e) => e);
+		expect(late).toBeInstanceOf(AxNoAnswer);
+		const failed = macBenchAx("/A.app", work(), { spawn: async () => 1, timeoutMs: 30 });
+		const launch = await failed.run(["keys"]).catch((e) => e);
+		expect(launch).toBeInstanceOf(Error);
+		expect(launch).not.toBeInstanceOf(AxNoAnswer);
 	});
 
 	test("open failing is an error", async () => {

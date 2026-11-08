@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dorico } from "../src/cli/dorico.js";
@@ -31,7 +31,7 @@ async function helper() {
 	});
 	client.start();
 	const fast = { openMs: 400, exportMs: 400, closeMs: 400 };
-	const ax = new FakeAx({ title: "Horns" });
+	const ax = new FakeAx({ title: "Horns", projectWindows: 0 }); // the Hub only: the import window is a readable dialog
 	const deps = {
 		dorico: client,
 		ax,
@@ -169,18 +169,26 @@ describe("mac-bench dorico", () => {
 		expect(JSON.parse(r.out.join("\n")).ax).toEqual({ trusted: true });
 	});
 
-	test("--midi writes <base>.dorico.musicxml, and nothing else", async () => {
+	test("--midi writes <base>.dorico.musicxml and the import window as <base>.midi-import.json", async () => {
 		const { url, dir } = await helper();
 		const out = join(dir, "out");
 		const mid = join(dir, "peaceful-dreams.mid");
 		writeFileSync(mid, MIDI);
 		const r = await run(["--midi", mid, "--out", out], url);
 		expect(r.code).toBe(0);
-		expect(r.out).toEqual([`ok ${join(out, "peaceful-dreams.dorico.musicxml")}`]);
+		expect(r.out).toEqual([
+			`ok ${join(out, "peaceful-dreams.dorico.musicxml")}`,
+			`import ${join(out, "peaceful-dreams.midi-import.json")}`,
+		]);
 		expect(readFileSync(join(out, "peaceful-dreams.dorico.musicxml"), "utf8")).toStartWith(
 			"fake .musicxml",
 		);
-		expect(readdirSync(out)).toEqual(["peaceful-dreams.dorico.musicxml"]);
+		const window = JSON.parse(readFileSync(join(out, "peaceful-dreams.midi-import.json"), "utf8"));
+		expect(window).toMatchObject({
+			file: "peaceful-dreams.mid",
+			useTrackMemory: true,
+			tracks: [{ name: "Chart", instrument: "Treble staff", destination: "Treble staff 1" }],
+		});
 	});
 
 	test("--midi --export mxl writes <base>.dorico.mxl", async () => {

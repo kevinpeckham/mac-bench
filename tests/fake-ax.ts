@@ -16,18 +16,23 @@
  * dialog is modal: while one is up, the menu and the windows behind it don't
  * respond.
  *
- * Dorico's standard windows (project windows, the MIDI Import Options
- * window) are Qt windows that describe themselves to Accessibility as the
- * application, as the first live MIDI run showed (2026-11-08, FINDINGS):
- * AXRole "AXApplication", AXTitle "Dorico", and as children the app's own
- * windows again, then its menu bar, to whatever depth is asked for. No
- * title, no contents: a press finds nothing in them. Dialogs and sheets are
- * described properly. The fake keeps them front to back; the front one is
- * the key window, where Return goes when no dialog is up: in the import
+ * Dorico's windows come in two shapes, by Dorico's state (FINDINGS). While
+ * a project window is open (the first live MIDI run, 2026-11-08), its
+ * standard windows, the MIDI Import Options window among them, describe
+ * themselves to Accessibility as the application: AXRole "AXApplication",
+ * AXTitle "Dorico", and as children the app's own windows again, then its
+ * menu bar, to whatever depth is asked for; no title, no contents, a press
+ * finds nothing in them ("opaque"). With no project open (the second live
+ * run), the Steinberg Hub is an AXWindow/AXStandardWindow and the import
+ * window an AXWindow/AXDialog titled "MIDI Import Options", readable and
+ * pressable like any dialog ("dialog"). `importShape` forces one shape.
+ * The fake keeps the standard windows front to back; the front one is the
+ * key window, where Return goes when no other dialog is up: in the import
  * window it accepts the import (Dorico then makes the project), in a
  * project window it does nothing; `returns` records where each Return went.
- * `showImport` puts the import window up, key (FakeDorico calls it when a
- * `.mid` is opened; `connect` wires the two); Escape drops it.
+ * The dialog-shaped window's OK accepts it too, its Cancel (and `dismiss`)
+ * drops it. `showImport` puts the import window up, key (FakeDorico calls
+ * it when a `.mid` is opened; `connect` wires the two); Escape drops it.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -51,6 +56,32 @@ export const XML = "Export uncompressed XML (.musicxml)";
 export const SEPARATE = "Export layouts as separate files";
 export const FOLDER = "Create folder for exported files";
 export const IMPORT = "MIDI Import Options";
+export const HUB = "Steinberg Hub";
+export const TRACK_MEMORY = "Use track memory";
+export const GENERAL_MIDI = "Interpret as General MIDI";
+
+/** A row of the import window's tracks table, as the screenshot shows it. */
+export type ImportTrack = {
+	name: string;
+	instrument: string;
+	technique?: string;
+	family: string;
+	destination: string;
+	maxNotes: number;
+	notes: number;
+	enabled?: boolean;
+};
+
+export const PEACEFUL_DREAMS_TRACK: ImportTrack = {
+	name: "Chart",
+	instrument: "Treble staff",
+	family: "Sketch",
+	destination: "Treble staff 1",
+	maxNotes: 5,
+	notes: 583,
+};
+
+export type Shape = "dialog" | "opaque";
 
 export type FakeAxOptions = {
 	trusted?: boolean;
@@ -88,8 +119,14 @@ export type FakeAxOptions = {
 	goToMissesOnce?: boolean;
 	/** Whether Return in the import window accepts the import. */
 	returnTakes?: boolean;
-	/** How many project windows Dorico shows (standard windows, opaque to Accessibility). */
+	/** How many project windows Dorico shows; with none, the Steinberg Hub shows. */
 	projectWindows?: number;
+	/** The shape Dorico's windows take; by default opaque while a project window is open, else dialog. */
+	importShape?: Shape | null;
+	/** The tracks the MIDI Import Options window lists (readable in the dialog shape). */
+	importTracks?: ImportTrack[];
+	/** Whether the dialog-shaped window's OK accepts the import. */
+	importOkTakes?: boolean;
 };
 
 const DEFAULTS: Record<string, 0 | 1> = {
@@ -99,7 +136,10 @@ const DEFAULTS: Record<string, 0 | 1> = {
 	[FOLDER]: 1,
 };
 
-type Options = Required<Omit<FakeAxOptions, "initial" | "stuck">> & { stuck: string | null };
+type Options = Required<Omit<FakeAxOptions, "initial" | "stuck" | "importShape">> & {
+	stuck: string | null;
+	importShape: Shape | null;
+};
 
 /** How deep main.swift's walk looks into a window. */
 const WALK_DEPTH = 14;
@@ -128,6 +168,8 @@ export class FakeAx implements AxClient {
 	onRun: ((args: string[]) => void) | null = null;
 	/** The MIDI file the import window names, while it is up. */
 	importFile: string | null = null;
+	/** The import window's two checkboxes. */
+	readonly importBoxes: Record<string, 0 | 1> = { [TRACK_MEMORY]: 1, [GENERAL_MIDI]: 1 };
 	/** What accepting the import window does (Dorico makes the project). */
 	private importAccept: (() => void) | null = null;
 	/** Dorico's standard windows, front (key) first. */
@@ -162,8 +204,11 @@ export class FakeAx implements AxClient {
 			goToMissesOnce: false,
 			returnTakes: true,
 			projectWindows: 1,
+			importTracks: [PEACEFUL_DREAMS_TRACK],
+			importOkTakes: true,
 			...opts,
 			stuck: opts.stuck ?? null,
+			importShape: opts.importShape ?? null,
 		};
 		this.boxes = {};
 		this.resetBoxes(opts.initial ?? {});
@@ -201,12 +246,24 @@ export class FakeAx implements AxClient {
 		this.standard.unshift("import");
 	}
 
-	/** Another project window, in front (one of Kevin's, say). */
+	/** The shape Dorico's windows take now. */
+	get shape(): Shape {
+		return this.o.importShape ?? (this.standard.includes("project") ? "opaque" : "dialog");
+	}
+
+	/** Another project window, in front (a project Dorico opened, or one of Kevin's). */
 	openProjectWindow(): void {
 		this.standard.unshift("project");
 	}
 
+	/** A project window gone (its project closed). */
+	closeProjectWindow(): void {
+		const i = this.standard.indexOf("project");
+		if (i >= 0) this.standard.splice(i, 1);
+	}
+
 	private closeImport(accepted: boolean) {
+		if (this.importFile === null) return;
 		const accept = this.importAccept;
 		this.importFile = null;
 		this.importAccept = null;
@@ -214,10 +271,12 @@ export class FakeAx implements AxClient {
 		if (accepted) accept?.();
 	}
 
-	/** Return into the key window: a dialog's (doing nothing here), else the front standard window's. */
+	/** Return into the key window: a dialog's default button (Export MusicXML's OK), else the front standard window's. */
 	private returnKey() {
 		if (this.exportOpen) {
 			this.returns.push("Export MusicXML");
+			this.exportOpen = false;
+			this.write();
 			return;
 		}
 		const key = this.standard[0];
@@ -408,12 +467,107 @@ export class FakeAx implements AxClient {
 				AXTitle: "Mixer",
 				children: [{ AXRole: "AXButton", AXSubrole: "AXCloseButton" }],
 			});
-		for (const _ of this.standard) {
+		const shape = this.shape;
+		if (this.importFile !== null && shape === "dialog") ws.unshift(this.importDialog());
+		for (const kind of this.standard) {
+			if (kind === "import" && shape === "dialog") continue;
 			const w: AxNode = { AXRole: "AXApplication", AXTitle: "Dorico" };
 			this.opaque.add(w);
 			ws.push(w);
 		}
+		if (!this.standard.includes("project"))
+			ws.push({
+				AXRole: "AXWindow",
+				AXSubrole: "AXStandardWindow",
+				AXTitle: HUB,
+				children: [
+					{ AXRole: "AXStaticText", AXValue: "Steinberg Hub" },
+					this.button("Open Recent", () => {}),
+					this.button("Create New", () => {}),
+				],
+			});
 		return ws;
+	}
+
+	/** The MIDI Import Options window as a dialog, laid out as the live dump began and Qt might list the rest. */
+	private importDialog(): AxNode {
+		const text = (v: string): AxNode => ({ AXRole: "AXStaticText", AXValue: v });
+		const cell = (...children: AxNode[]): AxNode => ({ AXRole: "AXCell", children });
+		const box = (title: string) =>
+			this.node(
+				{ AXRole: "AXCheckBox", AXTitle: title, AXValue: this.importBoxes[title] ?? 0 },
+				() => {
+					this.importBoxes[title] = this.importBoxes[title] ? 0 : 1;
+				},
+			);
+		const columns = [
+			"#",
+			"",
+			"MIDI track name",
+			"",
+			"Instrument(s) in track",
+			"Technique(s)",
+			"Family",
+			"Destination instrument",
+			"Max. sim. notes",
+			"Total no. of notes",
+		];
+		const rows = this.o.importTracks.map(
+			(t, i): AxNode => ({
+				AXRole: "AXRow",
+				children: [
+					cell(text(String(i + 1))),
+					cell({ AXRole: "AXCheckBox", AXValue: t.enabled === false ? 0 : 1 }),
+					cell(text(t.name)),
+					cell({ AXRole: "AXImage" }),
+					cell(text(t.instrument)),
+					cell(...(t.technique ? [text(t.technique)] : [])),
+					cell(text(t.family)),
+					cell(text(t.destination)),
+					cell(text(String(t.maxNotes))),
+					cell(text(String(t.notes))),
+				],
+			}),
+		);
+		return {
+			AXRole: "AXWindow",
+			AXSubrole: "AXDialog",
+			AXTitle: IMPORT,
+			children: [
+				{ AXRole: "AXGrowArea" },
+				text("Importing MIDI File:"),
+				text(this.importFile ?? ""),
+				box(TRACK_MEMORY),
+				box(GENERAL_MIDI),
+				text("Tracks from the MIDI file"),
+				{ AXRole: "AXCheckBox", AXTitle: "Basic editor", AXValue: 1 },
+				{ AXRole: "AXCheckBox", AXTitle: "Advanced editor", AXValue: 0 },
+				{ AXRole: "AXTextField", AXDescription: "Filter..." },
+				this.button("Show all", () => {}),
+				this.button("Show only enabled", () => {}),
+				{
+					AXRole: "AXTable",
+					children: [
+						{
+							AXRole: "AXGroup",
+							children: // main.swift leaves out an empty title
+								columns.map((c) =>
+									c ? { AXRole: "AXButton", AXTitle: c } : { AXRole: "AXButton" },
+								),
+						},
+						...rows,
+					],
+				},
+				this.button("Enable Selected", () => {}),
+				this.button("Disable Selected", () => {}),
+				{ AXRole: "AXDisclosureTriangle", AXTitle: "Import Options", AXValue: 0 },
+				{ AXRole: "AXButton", AXDescription: "Help" },
+				this.button("Cancel", () => this.closeImport(false)),
+				this.button("OK", () => {
+					if (this.o.importOkTakes) this.closeImport(true);
+				}),
+			],
+		};
 	}
 
 	/**
@@ -573,9 +727,12 @@ const sheetFields = (w: AxNode): AxNode[] => {
 /**
  * Wire a FakeDorico to a FakeAx as the real pair behave: opening a `.mid`
  * shows the import window, and while one is up, `File.Open` of anything
- * makes nothing (as the live run's next job found).
+ * makes nothing (as the live run's next job found); each project opened
+ * opens a window, and closing it closes the window.
  */
 export function connect(fake: FakeDorico, ax: FakeAx): void {
 	fake.onMidiImport = (file, accept) => ax.showImport(basename(file), accept);
 	fake.blocked = () => ax.importFile !== null;
+	fake.onOpened = () => ax.openProjectWindow();
+	fake.onClosed = () => ax.closeProjectWindow();
 }

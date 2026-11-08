@@ -35,7 +35,7 @@ async function helper(maxBytes?: number, axClient?: AxClient) {
 	});
 	client.start();
 	const fast = { openMs: 400, exportMs: 400, closeMs: 400 };
-	const ax = new FakeAx({ title: "A" });
+	const ax = new FakeAx({ title: "A", projectWindows: 0 }); // the Hub only: the import window is a readable dialog
 	const deps = {
 		dorico: client,
 		ax,
@@ -239,7 +239,7 @@ describe("the helper", () => {
 		expect(ax.log.filter((a) => a[0] === "trusted")).toHaveLength(1);
 	});
 
-	test("import=midi: the MIDI's bytes reach Dorico intact; Dorico's MusicXML comes back", async () => {
+	test("import=midi: the MIDI's bytes reach Dorico intact; Dorico's MusicXML and the import window come back", async () => {
 		const { url, fake } = await helper();
 		let received: Uint8Array | null = null;
 		const show = fake.onMidiImport;
@@ -258,8 +258,8 @@ describe("the helper", () => {
 			name: "peaceful-dreams.mid",
 			ok: true,
 			exported: "A - Full score - 01 A.musicxml",
+			importWindow: { file: "peaceful-dreams.mid", tracks: [{ name: "Chart", notes: 583 }] },
 		});
-		expect(results[0].importWindow).toBeUndefined();
 		expect(Buffer.from(results[0].file, "base64").toString()).toStartWith("fake .musicxml");
 		expect(fake.projects.size).toBe(0);
 	});

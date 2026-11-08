@@ -19,7 +19,7 @@ import {
 	type ExportTimeouts,
 	exportFile,
 } from "./export.js";
-import { importMidi, type MidiFile } from "./midi.js";
+import { importMidi, type MidiFile, type MidiResult } from "./midi.js";
 import { DoricoError } from "./protocol.js";
 import {
 	as,
@@ -111,7 +111,7 @@ export async function runFile(
 	return result;
 }
 
-export type JobResult = FileResult | ExportResult;
+export type JobResult = FileResult | ExportResult | MidiResult;
 
 /** A file for the queue: MusicXML, or a MIDI file (always exported, as MusicXML by default). */
 export type QueueFile = JobFile | MidiFile;

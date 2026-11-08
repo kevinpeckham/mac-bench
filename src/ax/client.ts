@@ -36,6 +36,13 @@ export const DIALOG_SUBROLES: readonly string[] = ["AXDialog", "AXSystemDialog"]
 
 export const isDialog = (w: AxNode) => DIALOG_SUBROLES.includes(w.AXSubrole ?? "");
 
+/**
+ * MacBenchAX was launched but gave no answer in time: the command may have
+ * run all the same (a key posted, a button pressed). Any other error from
+ * `run` (a launch that failed, an `error` in the answer) means it didn't.
+ */
+export class AxNoAnswer extends Error {}
+
 export type AxOptions = {
 	/** Run a command and resolve with its exit code (default: Bun.spawn). */
 	spawn?: (cmd: string[]) => Promise<number>;
@@ -77,7 +84,7 @@ export function macBenchAx(appPath: string, workDir: string, opts: AxOptions = {
 				};
 				tidy();
 				setTimeout(tidy, 3 * timeoutMs).unref();
-				throw new Error(
+				throw new AxNoAnswer(
 					`MacBenchAX gave no answer to ${what} within ${timeoutMs} ms; is it built (scripts/build-ax.ts), and is its work folder inside ~/Library/Application Support/mac-bench?`,
 				);
 			}
