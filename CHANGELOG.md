@@ -27,9 +27,12 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
   Control messages; the tests replay them through a fake Dorico.
 - **Dorico MIDI import:** `bin/mac-bench dorico --midi [--export
   musicxml|mxl] <file.mid…>` has Dorico import each Standard MIDI File,
-  accept its MIDI Import Options window as it comes (Return, no option
-  changed) and export the result as MusicXML (default) or `.mxl`, written
-  as `<base>.dorico.musicxml`. The helper takes it as
+  accept its MIDI Import Options window as it comes (OK or Return, no
+  option changed) and export the result as MusicXML (default) or `.mxl`,
+  written as `<base>.dorico.musicxml`; when the window was a readable
+  dialog, what it showed (its two checkboxes and each track's name,
+  instrument, destination and note counts) is written beside it as
+  `<base>.midi-import.json`. The helper takes it as
   `POST /jobs` with `import=midi` (anything else is a 400), the files as
   bytes; a file not starting with `MThd` is refused, by the CLI before
   sending and by the job. A job that fails at the window says how many
@@ -52,6 +55,21 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
   `importWindow` are gone. An export job whose `File.Open` makes nothing
   says a window Accessibility can't see (such as a MIDI Import Options
   window) may be in the way.
+- The MIDI job handles both shapes Dorico's import window takes: with no
+  project open (the Hub only) it is a readable dialog titled "MIDI Import
+  Options", which the count-only job missed in its second live run ("1
+  before File.Open, 1 now"); it is now found by title, read
+  (`importWindow`, `<base>.midi-import.json` again) and accepted with its
+  OK scoped to dialogs. With a project window open it is opaque and still
+  accepted with Return.
+- A Return or OK that certainly wasn't sent (MacBenchAX refused it,
+  couldn't be launched, or Dorico couldn't be brought forward) now fails
+  at once; only one that may have gone (no answer in time, `AxNoAnswer`)
+  waits for the project and records it. Before, any failure waited and
+  could record, and close, a project of someone else's.
+- The wait for the project after Return or OK no longer shares one time
+  budget with the steps before it, so a slow MacBenchAX can't make it
+  report "Return didn't take" early.
 
 ### Changed
 
@@ -71,12 +89,16 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
   types only while Dorico is frontmost, writes only inside the helper's
   work folder, and is signed with the hardened runtime (no `DYLD_*`
   injection).
-- Return goes to Dorico's MIDI Import Options window once, never retried,
-  and only when Dorico's window count rose by exactly one after opening the
-  `.mid`, no project has appeared, and no dialog, sheet or menu is open,
-  checked again just before it. No press is ever sent outside `--dialogs`.
-  Once Return is sent, a failure (a late answer) still waits for the
-  project and closes it, or says to close it if it comes later; a project
-  that appears after the window showed and before Return is never taken
-  for the import (no Return is sent). The failsafe can't see the import window: a job that fails with
-  one open says to Cancel it on the Mac.
+- OK in Dorico's MIDI Import Options window is pressed only when it is a
+  readable dialog and the one dialog open, scoped with `--dialogs`; Return
+  is sent to it only when it is opaque, once, never retried, and only when
+  Dorico's non-dialog window count rose by exactly one (an opaque window)
+  after opening the `.mid`, no project has appeared, and no dialog, sheet
+  or menu is open, checked again just before it. No press is ever sent
+  outside `--dialogs`. Once Return or OK may have gone (no answer in
+  time), a failure still waits for the project and closes it, or says to
+  close it if it comes later; a project that appears without the window,
+  or after it showed and before it was accepted, is never taken for the
+  import. The failsafe cancels a dialog-shaped import window; it can't see
+  an opaque one, and a job that fails with one open says to Cancel it on
+  the Mac.

@@ -270,6 +270,56 @@ Return does nothing harmful, and the job never saves a project. A
 floating window opening or closing near `File.Open` could also give a
 false N+1; no live dump has checked this yet.
 
+Correction (the next run): this holds only while a project window is open;
+with only the Hub, the import window is a readable dialog. See "The import
+window's shape depends on Dorico's state" below.
+
+### The import window's shape depends on Dorico's state
+
+Symptom: the count-only job's first live run, with only the Steinberg Hub
+open, failed with "Dorico's MIDI Import Options window didn't show within
+30000 ms, and no project came; … Dorico's windows numbered 1 before
+File.Open, 1 now (AXWindow/AXDialog "MIDI Import Options" [AXGrowArea,
+AXStaticText, AXStaticText, AXCheckBox "Use track memory", AXCheckBox
+"Interpret as General MIDI", AXStaticText, AXCheckBox "Basic editor",
+AXCheckBox "Advanced editor", … 15 more]; AXWindow/AXStandardWindow
+"Steinberg Hub" [AXStaticText, AXButton "Open Recent", AXButton "Create
+New", …])". The run before, with a project window open, had seen only
+opaque windows: "AXApplication "Dorico" [AXApplication "Dorico",
+AXApplication "Dorico", AXMenuBar]; AXApplication "Dorico" [AXApplication
+"Dorico", AXApplication "Dorico", AXMenuBar]". Cause: Dorico's windows
+describe themselves in one of two ways by its state. With no project
+open, the Hub is an AXWindow/AXStandardWindow and the import window a
+proper, readable AXWindow/AXDialog; the count ignores dialogs, so it
+stayed at 1. With a project window open, the standard windows and the
+import window all describe themselves as the application (the entry
+above). Fix: the job takes either. A window titled "MIDI Import Options"
+in a one-level dump is the import window (preflight saw no dialog, so it
+is the job's): it is read from a `--dialogs` dump (`importWindow`,
+`<base>.midi-import.json`), and, when it is the one dialog open, its OK
+is pressed scoped with `--dialogs` and the window checked gone. Otherwise
+one more non-dialog window, an opaque one, is the import window, accepted
+with Return as before. Preflight refuses a leftover dialog-shaped one like
+any dialog; the failsafe's `dismiss` cancels the job's own (its Cancel).
+The fakes model both (`importShape`; by default opaque while a project
+window is open, which `connect` now opens for each project). Rule, again:
+a fake's shape stands for one real dump in one state; look at the others.
+
+### A failed Return was treated as one that may have gone (review, 2026-11-08)
+
+Symptom: a review of the count-and-Return job found that when Return
+certainly wasn't sent (Dorico not brought forward, MacBenchAX refusing
+because another app was frontmost, its launch failing), the job still
+waited for a project and recorded the first newer one, which `wrapUp`
+would close unsaved: possibly someone else's. It also found the wait for
+the project shared one time budget with the steps before it, so a slow
+MacBenchAX could make it report "Return didn't take" early. Cause: one
+catch for every failure, and one watcher started before File.Open. Fix:
+`activate()` before the send; only `AxNoAnswer` (MacBenchAX launched but
+gave no answer in time, `src/ax/client.ts`) counts as "may have gone";
+the project is waited for afresh after the send, and the "no new project"
+checks read `highestScoreID` directly (`src/dorico/midi.ts`).
+
 ### A probe outside the helper left Dorico blocked
 
 Symptom: a `.mid` opened over Remote Control from an SSH probe left the
