@@ -44,8 +44,10 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
   the application (no title, no contents), so the window couldn't be found
   by title, read or pressed. The job now counts Dorico's windows: when there
   is one more after `File.Open` and no new project, it sends Return once
-  (the window's default button is OK) and waits for the project; if Dorico
-  imports without asking, it takes that project. The tracks table is no
+  (the window's default button is OK) and waits for the project. A project
+  that appears without the window showing first is never taken (a score ID
+  can't prove it came from the job's file): the job stops and leaves it
+  open, to be closed on the Mac without saving. The tracks table is no
   longer recorded: `<base>.midi-import.json` and the result's
   `importWindow` are gone. An export job whose `File.Open` makes nothing
   says a window Accessibility can't see (such as a MIDI Import Options

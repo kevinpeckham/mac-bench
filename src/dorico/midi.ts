@@ -9,10 +9,19 @@
  * there is one window more than before and no new project. The job then
  * accepts it with Return, once, never retried (OK is its default button;
  * no option is changed), waits for the project, exports it as the export
- * job does (`exportProject`) and closes it unsaved. If Dorico makes the
- * project without asking, that project is taken straight to the export.
- * The same preflight, failsafe and wrap-up as the export job; the failsafe
+ * job does (`exportProject`) and closes it unsaved. A project that appears
+ * without the window showing first is never taken: a score ID can't prove
+ * it came from this job's file, so the job stops and leaves it open. The
+ * same preflight, failsafe and wrap-up as the export job; the failsafe
  * can't see the import window, so one left open is named in the error.
+ *
+ * Remaining risk, accepted: Return goes to whichever Dorico window is key,
+ * and Accessibility can't say which that is (checking would need a
+ * MacBenchAX rebuild). Right after a `.mid` opens, it has been the import
+ * window (Kevin, live, 2026-11-08); in a project window with nothing
+ * selected, Return does nothing harmful, and the job never saves a
+ * project. A floating window opening or closing near `File.Open` could
+ * also give a false N+1; no live dump has checked this yet.
  */
 import type { DoricoClient } from "./client.js";
 import {
@@ -74,21 +83,25 @@ async function before(deps: ExportDeps): Promise<Before> {
 const LATER = "if a project appears later, close it without saving";
 
 /**
- * Wait, within `openMs`, for the import window (one window more than
- * before, no new project) or for a project Dorico made without asking.
- * Returns that project's ID, or null when the window showed.
+ * Wait, within `openMs`, for the import window: one window more than
+ * before, and no new project. A project appearing first stops the job,
+ * left open and never recorded: it may not be this job's.
  */
 async function waitForImport(
 	deps: ExportDeps,
 	t: ExportTimeouts,
 	was: Before,
 	made: Made,
-): Promise<number | null> {
+): Promise<void> {
 	const end = Date.now() + t.openMs;
 	for (;;) {
 		const now = await windowCount(deps.ax);
-		if (made.id !== null) return made.id;
-		if (now === was.windows + 1) return null;
+		if (made.id !== null)
+			throw new StepError(
+				"import",
+				`a project appeared without the ${IMPORT_WINDOW} window; it may not be this job's: left open, close it on the Mac without saving`,
+			);
+		if (now === was.windows + 1) return;
 		if (Date.now() >= end)
 			throw new StepError(
 				"import",
@@ -175,9 +188,8 @@ export async function importMidi(
 		const was = await as("open", () => before(deps));
 		const made = watch(deps.dorico, was.floor, 2 * t.openMs + t.dialogMs);
 		await as("open", () => deps.dorico.command(`File.Open?File=${job.input}`));
-		const asked = await as("import", () => waitForImport(deps, t, was, made));
-		if (asked !== null) seen.project = asked;
-		const project = asked ?? (await as("import", () => accept(deps, t, was, made, seen)));
+		await as("import", () => waitForImport(deps, t, was, made));
+		const project = await as("import", () => accept(deps, t, was, made, seen));
 		result = { name, ...(await exportProject(deps, t, project, job.out, format)) };
 	} catch (e) {
 		result = failed(name, e);

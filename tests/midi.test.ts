@@ -158,13 +158,19 @@ describe("importMidi", () => {
 		expect(jobFolders(work)).toHaveLength(1); // kept for a look
 	});
 
-	test("Dorico importing without asking: no Return, the project exported and closed", async () => {
+	test("a project appearing without the import window: fails closed, never exported or closed", async () => {
 		const { fake, ax, deps, work } = await setup({}, { importsWithoutAsking: true });
 		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
-		expect(r).toMatchObject({ ok: true, exported: "Hymn - Full score - 01 Hymn.musicxml" });
-		expect(ax.returns.filter((w) => w !== "Go to Folder")).toEqual([]);
-		expect(closes(fake)).toHaveLength(1);
-		expect(fake.projects.size).toBe(0);
+		expect(r).toMatchObject({ ok: false, step: "import" });
+		if (!r.ok) {
+			expect(r.message).toContain(
+				"a project appeared without the MIDI Import Options window; it may not be this job's: left open, close it on the Mac without saving",
+			);
+		}
+		expect(returns(ax)).toEqual([]);
+		expect(ax.log.some((a) => a[0] === "menu")).toBe(false); // no export
+		expect(closes(fake)).toEqual([]);
+		expect(fake.projects.size).toBe(1);
 	});
 
 	test("a stuck import window before the job: File.Open makes nothing, no Return sent", async () => {

@@ -252,12 +252,23 @@ when there is one more and no new project. It then sends Return once,
 never retried, after checking again that nothing else is open, the count
 is still one up and no project has appeared (Kevin, live: with the window
 freshly shown and active, one Return closed it and Dorico made the
-project; OK is its default button). A project made without asking is
-taken straight to the export. The tracks table is no longer recorded
-(`src/dorico/midi.ts`, `src/dorico/import-window.ts`; the fakes now model
-standard windows as the real ones describe themselves). The export job's
-`File.Open` timeout says such a window may be in the way. Rule: check a
-fake's shape against a real dump before trusting it.
+project; OK is its default button). A project that appears without the
+window showing first is never taken, exported or closed: a score ID can't
+prove it came from the job's file, and closing someone else's project
+unsaved loses their work; the job stops and leaves it open. The tracks
+table is no longer recorded (`src/dorico/midi.ts`,
+`src/dorico/import-window.ts`; the fakes now model standard windows as the
+real ones describe themselves). The export job's `File.Open` timeout says
+such a window may be in the way. Rule: check a fake's shape against a real
+dump before trusting it.
+
+Remaining risk, accepted: Return goes to whichever Dorico window is key,
+and Accessibility can't say which that is (checking would need a
+MacBenchAX rebuild). Right after a `.mid` opens, it has been the import
+window (Kevin's live test); in a project window with nothing selected,
+Return does nothing harmful, and the job never saves a project. A
+floating window opening or closing near `File.Open` could also give a
+false N+1; no live dump has checked this yet.
 
 ### A probe outside the helper left Dorico blocked
 
