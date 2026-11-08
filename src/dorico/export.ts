@@ -11,9 +11,10 @@
  * and closes any open menu, and the project is closed unsaved, by its ID,
  * while it is in front. The only text ever typed is the folder path; the
  * only OK pressed is the Export MusicXML dialog's, and Return is sent only
- * to the Go to Folder sheet once it holds that path. Dorico's MIDI Import
- * Options window, a standard window, counts as a dialog wherever one is
- * checked for (`blocking`), and the failsafe cancels it too. The MIDI job
+ * to the Go to Folder sheet once it holds that path. Dorico's standard
+ * windows (a MIDI Import Options window among them) can't be seen through
+ * Accessibility (`import-window.ts`): nothing here looks for one, and one
+ * left open shows only as a `File.Open` that makes nothing. The MIDI job
  * (`midi.ts`) shares the export path (`exportProject`) and the wrap-up.
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -21,13 +22,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { type AxClient, type AxNode, isDialog } from "../ax/client.js";
 import type { DoricoClient } from "./client.js";
-import {
-	axCommand as ax,
-	flat,
-	importWindows,
-	isImportWindow,
-	pressInImport,
-} from "./import-window.js";
+import { axCommand as ax, flat, IMPORT_WINDOW } from "./import-window.js";
 import type { JobFile, Timeouts } from "./job.js";
 import {
 	as,
@@ -112,14 +107,8 @@ async function look(client: AxClient, depth = 12): Promise<Seen> {
 	};
 }
 
-/**
- * What would block a job: the dialogs, sheets and an open menu (`look`, one
- * level down), and the MIDI Import Options window, which isn't a dialog.
- */
-export async function blocking(client: AxClient): Promise<Seen> {
-	const s = await look(client, 1);
-	return { ...s, windows: [...s.windows, ...(await importWindows(client))] };
-}
+/** What would block a job: the dialogs, sheets and an open menu (`look`, one level down). */
+export const blocking = (client: AxClient): Promise<Seen> => look(client, 1);
 
 /**
  * Press an element of Dorico's dialogs. Dorico rebuilds a dialog's
@@ -371,11 +360,11 @@ async function pressEscape(deps: ExportDeps, t: ExportTimeouts) {
 }
 
 /**
- * Cancel every dialog Dorico has open (the MIDI Import Options window
- * included) and close an open menu: up to four rounds of `dismiss` (Escape
- * first for a menu) and the import window's Cancel, from the second with
+ * Cancel every dialog Dorico has open and close an open menu: up to four
+ * rounds of `dismiss` (Escape first for a menu), from the second with
  * Escape too, which closes what has no Cancel (the Go to Folder sheet).
- * Returns what is still open, as an error, or null.
+ * Returns what is still open, as an error, or null. A MIDI Import Options
+ * window can't be seen, so it is never cancelled here.
  */
 async function failsafe(deps: ExportDeps, t: ExportTimeouts): Promise<string | null> {
 	try {
@@ -386,9 +375,7 @@ async function failsafe(deps: ExportDeps, t: ExportTimeouts): Promise<string | n
 				if (now.menuOpen === null) return null;
 				continue;
 			}
-			if (now.windows.some((w) => !isImportWindow(w))) await ax(deps.ax, "dismiss").catch(() => {});
-			// `dismiss` sees dialogs only: the import window's Cancel is pressed on its own.
-			if (now.windows.some(isImportWindow)) await pressInImport(deps.ax, "Cancel").catch(() => {});
+			await ax(deps.ax, "dismiss").catch(() => {});
 			await Bun.sleep(t.settleMs);
 			if (round > 0 && (await blocking(deps.ax)).windows.length > 0) await pressEscape(deps, t);
 		}
@@ -408,7 +395,7 @@ const fail = (r: ExportResult, step: Step, message: string): ExportResult =>
 		? { name: r.name, ok: false, step, message }
 		: { ...r, message: r.message.includes(message) ? r.message : `${r.message}; ${message}` };
 
-/** Before anything: MacBenchAX trusted, and Dorico showing no dialog, import window or menu. */
+/** Before anything: MacBenchAX trusted, and Dorico showing no dialog, sheet or menu. */
 export async function preflight(deps: ExportDeps): Promise<{ step: Step; message: string } | null> {
 	try {
 		if ((await deps.ax.run(["trusted"])).trusted !== true)
@@ -430,6 +417,9 @@ export async function preflight(deps: ExportDeps): Promise<{ step: Step; message
 	}
 	return null;
 }
+
+/** Why a `File.Open` may make nothing though Dorico showed no dialog. */
+const UNSEEN = `a window Accessibility can't see (such as a ${IMPORT_WINDOW} window) may be in the way: look by screen sharing`;
 
 /** One file through Dorico's MusicXML export. Never throws: a failure names the step that stopped. */
 export async function exportFile(
@@ -453,7 +443,12 @@ export async function exportFile(
 	let id: number | null = null;
 	let result: ExportResult;
 	try {
-		const project = await as("open", () => open(deps.dorico, job.input, t.openMs));
+		const project = await as("open", () => open(deps.dorico, job.input, t.openMs)).catch(
+			(e: StepError) => {
+				if (e.step === "open") e.message = `${e.message}; ${UNSEEN}`;
+				throw e;
+			},
+		);
 		id = project;
 		result = { name, ...(await exportProject(deps, t, project, job.out, format)) };
 	} catch (e) {

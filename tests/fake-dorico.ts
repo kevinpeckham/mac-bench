@@ -10,7 +10,9 @@
  *
  * A `.mid` opens as Dorico Elements 6.2.31 did live (2026-11-08): `kOK`, no
  * project, and the MIDI Import Options window (`onMidiImport`, wired to a
- * FakeAx); the project is made only when that window's OK is pressed.
+ * FakeAx); the project is made only when that window is accepted (Return).
+ * While `blocked` says so (an import window up), `File.Open` answers `kOK`
+ * and makes nothing, as the live run's next job found.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -27,6 +29,8 @@ export type FakeOptions = {
 	openDelayMs?: number;
 	/** Whether an export writes its PDF (false: the export never appears). */
 	writesPdf?: boolean;
+	/** A `.mid` makes its project at once, with no import window. */
+	importsWithoutAsking?: boolean;
 	port?: number;
 };
 
@@ -42,9 +46,11 @@ export class FakeDorico {
 	onOpened: ((id: number) => void) | null = null;
 	/**
 	 * Called when a `.mid` is opened, in place of making a project: `accept`
-	 * makes it (the import window's OK). Unset, the file just sits there.
+	 * makes it (the import window accepted). Unset, the file just sits there.
 	 */
 	onMidiImport: ((file: string, accept: () => void) => void) | null = null;
+	/** While this says true, `File.Open` makes nothing (a window Dorico waits on is up). */
+	blocked: (() => boolean) | null = null;
 	/** Every message sent to a client, in order. */
 	readonly sent: Record<string, unknown>[] = [];
 	private nextId = 35;
@@ -59,6 +65,7 @@ export class FakeDorico {
 			issueToken: "issued-token",
 			openDelayMs: 20,
 			writesPdf: true,
+			importsWithoutAsking: false,
 			...options,
 		};
 		this.server = Bun.serve({
@@ -215,6 +222,7 @@ export class FakeDorico {
 		switch (name) {
 			case "File.Open": {
 				ok();
+				if (this.blocked?.()) return;
 				const file = params.get("File") ?? "";
 				const make = () => {
 					const id = this.add(file);
@@ -222,7 +230,7 @@ export class FakeDorico {
 					this.onOpened?.(id);
 				};
 				setTimeout(() => {
-					if (/\.midi?$/i.test(file))
+					if (/\.midi?$/i.test(file) && !this.opts.importsWithoutAsking)
 						this.onMidiImport?.(file, () => setTimeout(make, this.opts.openDelayMs));
 					else make();
 				}, this.opts.openDelayMs);

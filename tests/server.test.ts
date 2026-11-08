@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import type { AxClient } from "../src/ax/client.js";
 import { DoricoClient } from "../src/dorico/client.js";
 import { JobQueue, runFiles } from "../src/dorico/job.js";
 import { startServer } from "../src/helper/server.js";
 import { tailnetAddress } from "../src/helper/tailnet.js";
-import { DORICO, FakeAx } from "./fake-ax.js";
+import { connect, DORICO, FakeAx } from "./fake-ax.js";
 import { FakeDorico } from "./fake-dorico.js";
 
 const TOKEN = "test-bearer-token";
@@ -44,7 +44,7 @@ async function helper(maxBytes?: number, axClient?: AxClient) {
 		},
 	};
 	const slow = { ...fast, dialogMs: 300, settleMs: 1, pollMs: 5 };
-	fake.onMidiImport = (file, accept) => ax.showImport(basename(file), accept);
+	connect(fake, ax);
 	const queue = new JobQueue((files, format) =>
 		runFiles(files, format, deps, join(dir, "work"), { pdf: fast, export: slow }),
 	);
@@ -239,7 +239,7 @@ describe("the helper", () => {
 		expect(ax.log.filter((a) => a[0] === "trusted")).toHaveLength(1);
 	});
 
-	test("import=midi: the MIDI's bytes reach Dorico intact; Dorico's MusicXML and the import window come back", async () => {
+	test("import=midi: the MIDI's bytes reach Dorico intact; Dorico's MusicXML comes back", async () => {
 		const { url, fake } = await helper();
 		let received: Uint8Array | null = null;
 		const show = fake.onMidiImport;
@@ -258,8 +258,8 @@ describe("the helper", () => {
 			name: "peaceful-dreams.mid",
 			ok: true,
 			exported: "A - Full score - 01 A.musicxml",
-			importWindow: { file: "peaceful-dreams.mid", tracks: [{ name: "Chart", notes: 583 }] },
 		});
+		expect(results[0].importWindow).toBeUndefined();
 		expect(Buffer.from(results[0].file, "base64").toString()).toStartWith("fake .musicxml");
 		expect(fake.projects.size).toBe(0);
 	});
