@@ -8,8 +8,9 @@ Design: `docs/superpowers/specs/2026-11-05-dorico-checks-design.md`.
 ## Layout
 
 - `src/dorico/`: the Remote Control client (`client.ts`, `protocol.ts`,
-  `token.ts`), the steps jobs share (`steps.ts`), the PDF job (`job.ts`)
-  and the MusicXML export job (`export.ts`)
+  `token.ts`), the steps jobs share (`steps.ts`), the PDF job and the
+  queue (`job.ts`), the MusicXML export job (`export.ts`), the MIDI job
+  (`midi.ts`) and Dorico's MIDI Import Options window (`import-window.ts`)
 - `ax/`: MacBenchAX (`main.swift`, `Info.plist`), the one app granted
   Accessibility on the Mac; `src/ax/client.ts` launches it and reads its
   answers (`AxClient`, injected everywhere so tests use `tests/fake-ax.ts`)
@@ -20,7 +21,9 @@ Design: `docs/superpowers/specs/2026-11-05-dorico-checks-design.md`.
   `scripts/record.ts`: records real Dorico messages into `tests/recordings/`;
   `scripts/install-launchd.ts`: installs the helper as a launchd agent
 - `tests/fake-dorico.ts`: a fake Remote Control server reproducing the
-  recordings; `tests/fake-ax.ts` models Dorico's export dialogs as state;
+  recordings (a `.mid` waits for the import window's OK);
+  `tests/fake-ax.ts` models Dorico's export dialogs and its MIDI Import
+  Options window as state;
   every test runs against fakes, none needs Dorico, a Mac or the env
 
 ## Commands
@@ -30,6 +33,7 @@ bun test                                   # tests (no env, no Dorico)
 bun run check                              # Biome (tabs) and tsc
 bin/mac-bench dorico <file.musicxml…>      # on the VM, from any folder: PDFs into ./dorico-runs/
 bin/mac-bench dorico --export musicxml|mxl <files…>   # Dorico's MusicXML export: <base>.dorico.musicxml|mxl
+bin/mac-bench dorico --midi [--export musicxml|mxl] <file.mid…>   # MIDI import, then the export; + <base>.midi-import.json
 bin/mac-bench dorico --health              # includes ax.trusted
 bun scripts/build-ax.ts [--rebuild]        # on the Mac: build MacBenchAX (then grant it: README)
 bun run helper                             # on the Mac (launchd runs this)
@@ -55,14 +59,22 @@ bun run helper                             # on the Mac (launchd runs this)
   `tccutil reset Accessibility dev.lj.mac-bench.ax` and grant again
   (README). It acts only on Dorico by bundle ID, types only while Dorico is
   frontmost, and answers only inside the work folder.
-- An export job starts only when Dorico shows no dialog or open menu
-  (`--dialogs` everywhere: never into a document window). It types nothing
-  but the folder path; the only OK it presses is the Export MusicXML
-  dialog's, when that is the one dialog open; and it sends Return only to
-  the Go to Folder sheet once that holds the path (Return elsewhere could
-  act as OK or Choose). It always runs its failsafe (cancel every dialog,
+- An export or MIDI job starts only when Dorico shows no dialog, MIDI
+  Import Options window or open menu (`--dialogs` for dialogs: never into
+  a document window; the import window is a standard window, found by
+  title in a one-level full dump). It types nothing but the folder path;
+  the only OKs it presses are the Export MusicXML dialog's, when that is
+  the one dialog open, and the MIDI Import Options window's, when that is
+  the one thing open and a full dump shows the unscoped press
+  (`--after "MIDI Import Options"`) lands in it; it changes no option in
+  the import window; and it sends Return only to the Go to Folder sheet
+  once that holds the path (Return elsewhere could act as OK or Choose).
+  It always runs its failsafe (cancel every dialog and the import window,
   close any menu) and then closes its project unsaved, unless a dialog
   stayed open.
+- Drive Dorico's windows only through the helper: a probe from SSH can't
+  reach MacBenchAX (no GUI session) and left the import window up,
+  blocking the next job (FINDINGS).
 - The repo is public: never commit a Dorico session token or any secret.
 - Test first; conventional commits with no Co-Authored-By or other AI
   trailer; a CHANGELOG `[Unreleased]` entry per user-visible change; a

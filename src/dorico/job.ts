@@ -12,7 +12,14 @@
 import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DoricoClient } from "./client.js";
-import type { ExportFormat, ExportResult } from "./export.js";
+import {
+	type ExportDeps,
+	type ExportFormat,
+	type ExportResult,
+	type ExportTimeouts,
+	exportFile,
+} from "./export.js";
+import { importMidi, type MidiFile, type MidiResult } from "./midi.js";
 import { DoricoError } from "./protocol.js";
 import {
 	as,
@@ -104,25 +111,49 @@ export async function runFile(
 	return result;
 }
 
-export type JobResult = FileResult | ExportResult;
+export type JobResult = FileResult | ExportResult | MidiResult;
+
+/** A file for the queue: MusicXML, or a MIDI file (always exported, as MusicXML by default). */
+export type QueueFile = JobFile | MidiFile;
+
+/**
+ * Each file through the job it asks for: a MIDI file through Dorico's
+ * import and export, MusicXML through the export (`format`) or the PDF.
+ */
+export async function runFiles(
+	files: QueueFile[],
+	format: ExportFormat | undefined,
+	deps: ExportDeps,
+	workDir: string,
+	timeouts: { pdf?: Timeouts; export?: ExportTimeouts } = {},
+): Promise<JobResult[]> {
+	const results: JobResult[] = [];
+	for (const f of files)
+		results.push(
+			"midi" in f
+				? await importMidi(deps, f, format ?? "musicxml", workDir, timeouts.export)
+				: format
+					? await exportFile(deps, f, format, workDir, timeouts.export)
+					: await runFile(deps.dorico, f, workDir, timeouts.pdf),
+		);
+	return results;
+}
 
 /**
  * Jobs one at a time: Dorico has one project in front. PDF jobs (no
- * format) and MusicXML export jobs share the queue.
+ * format), MusicXML export jobs and MIDI jobs share the queue.
  */
-export class JobQueue {
+export class JobQueue<F = QueueFile> {
 	private tail: Promise<unknown> = Promise.resolve();
 	private waiting = 0;
 
-	constructor(
-		private readonly run: (files: JobFile[], format?: ExportFormat) => Promise<JobResult[]>,
-	) {}
+	constructor(private readonly run: (files: F[], format?: ExportFormat) => Promise<JobResult[]>) {}
 
 	get length(): number {
 		return this.waiting;
 	}
 
-	add(files: JobFile[], format?: ExportFormat): Promise<JobResult[]> {
+	add(files: F[], format?: ExportFormat): Promise<JobResult[]> {
 		this.waiting++;
 		const job = this.tail.then(() => this.run(files, format)).finally(() => this.waiting--);
 		this.tail = job.catch(() => {});

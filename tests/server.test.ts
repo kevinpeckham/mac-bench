@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { AxClient } from "../src/ax/client.js";
 import { DoricoClient } from "../src/dorico/client.js";
-import { type ExportFormat, exportFile } from "../src/dorico/export.js";
-import { type JobFile, JobQueue, runFile } from "../src/dorico/job.js";
+import { JobQueue, runFiles } from "../src/dorico/job.js";
 import { startServer } from "../src/helper/server.js";
 import { tailnetAddress } from "../src/helper/tailnet.js";
 import { DORICO, FakeAx } from "./fake-ax.js";
@@ -14,6 +13,11 @@ import { FakeDorico } from "./fake-dorico.js";
 const TOKEN = "test-bearer-token";
 const XML = (title: string) =>
 	`<score-partwise version="4.0"><work><work-title>${title}</work-title></work></score-partwise>`;
+/** A Standard MIDI File: a header and one empty track, with bytes no text decoding survives. */
+const MIDI = new Uint8Array([
+	...[0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, 1, 0x01, 0xe0],
+	...[0x4d, 0x54, 0x72, 0x6b, 0, 0, 0, 4, 0, 0xff, 0x2f, 0],
+]);
 const cleanup: (() => void)[] = [];
 afterEach(() => {
 	for (const f of cleanup.splice(0)) f();
@@ -40,16 +44,10 @@ async function helper(maxBytes?: number, axClient?: AxClient) {
 		},
 	};
 	const slow = { ...fast, dialogMs: 300, settleMs: 1, pollMs: 5 };
-	const queue = new JobQueue(async (files: JobFile[], format?: ExportFormat) => {
-		const out = [];
-		for (const f of files)
-			out.push(
-				format
-					? await exportFile(deps, f, format, join(dir, "work"), slow)
-					: await runFile(client, f, join(dir, "work"), fast),
-			);
-		return out;
-	});
+	fake.onMidiImport = (file, accept) => ax.showImport(basename(file), accept);
+	const queue = new JobQueue((files, format) =>
+		runFiles(files, format, deps, join(dir, "work"), { pdf: fast, export: slow }),
+	);
 	const server = startServer({
 		hostname: "127.0.0.1",
 		port: 0,
@@ -239,5 +237,54 @@ describe("the helper", () => {
 		const { url, ax } = await helper();
 		for (let i = 0; i < 3; i++) await fetch(`${url}/health`, { headers: auth });
 		expect(ax.log.filter((a) => a[0] === "trusted")).toHaveLength(1);
+	});
+
+	test("import=midi: the MIDI's bytes reach Dorico intact; Dorico's MusicXML and the import window come back", async () => {
+		const { url, fake } = await helper();
+		let received: Uint8Array | null = null;
+		const show = fake.onMidiImport;
+		fake.onMidiImport = (file, accept) => {
+			received = new Uint8Array(readFileSync(file));
+			show?.(file, accept);
+		};
+		const form = new FormData();
+		form.append("import", "midi");
+		form.append("file", new File([MIDI], "peaceful-dreams.mid"));
+		const res = await fetch(`${url}/jobs`, { method: "POST", body: form, headers: auth });
+		expect(res.status).toBe(200);
+		const { results } = await res.json();
+		expect(received as Uint8Array | null).toEqual(MIDI);
+		expect(results[0]).toMatchObject({
+			name: "peaceful-dreams.mid",
+			ok: true,
+			exported: "A - Full score - 01 A.musicxml",
+			importWindow: { file: "peaceful-dreams.mid", tracks: [{ name: "Chart", notes: 583 }] },
+		});
+		expect(Buffer.from(results[0].file, "base64").toString()).toStartWith("fake .musicxml");
+		expect(fake.projects.size).toBe(0);
+	});
+
+	test("import=midi with export=mxl", async () => {
+		const { url } = await helper();
+		const form = new FormData();
+		form.append("import", "midi");
+		form.append("export", "mxl");
+		form.append("file", new File([MIDI], "a.mid"));
+		const { results } = await (
+			await fetch(`${url}/jobs`, { method: "POST", body: form, headers: auth })
+		).json();
+		expect(results[0]).toMatchObject({ ok: true, exported: "A - Full score - 01 A.mxl" });
+	});
+
+	test("400 for any other import value, before anything runs", async () => {
+		const { url, fake, ax } = await helper();
+		const form = new FormData();
+		form.append("import", "musicxml");
+		form.append("file", new File([MIDI], "a.mid"));
+		const res = await fetch(`${url}/jobs`, { method: "POST", body: form, headers: auth });
+		expect(res.status).toBe(400);
+		expect((await res.json()).error).toContain("midi");
+		expect(fake.commandsReceived).toEqual([]);
+		expect(ax.log).toEqual([]);
 	});
 });

@@ -18,6 +18,18 @@ bin/mac-bench dorico --export musicxml horns.musicxml
 ok dorico-runs/20261107-190000/horns.dorico.musicxml
 ```
 
+**MIDI imports** — Dorico imports a Standard MIDI File (accepting its
+MIDI Import Options window as it comes) and exports MusicXML, with what
+that window showed (each track's instrument and destination, and how
+long each deep look at Dorico's windows took) beside it. Don't open or
+click a project while a MIDI job runs:
+
+```
+bin/mac-bench dorico --midi peaceful-dreams.mid
+ok dorico-runs/20261108-120000/peaceful-dreams.dorico.musicxml
+import dorico-runs/20261108-120000/peaceful-dreams.midi-import.json
+```
+
 Design: [docs/superpowers/specs/2026-11-05-dorico-checks-design.md](docs/superpowers/specs/2026-11-05-dorico-checks-design.md).
 
 ## Setting up a Mac
@@ -93,8 +105,8 @@ anything else: if you click into your own project mid-job, the job stops
 and says so, leaving its own project open for you to close (Don't Save).
 
 An export job also brings Dorico to the front and works its Export
-MusicXML dialog for a few seconds: keep your hands off the keyboard and
-mouse meanwhile (a key typed into the folder sheet would go into the
-path). Whatever happens, it cancels any dialog it leaves open and closes
+MusicXML dialog for a few seconds (a MIDI job its MIDI Import Options
+window too): keep your hands off the keyboard and mouse meanwhile (a
+key typed into the folder sheet would go into the path). Whatever happens, it cancels any dialog it leaves open and closes
 its project unsaved; a dialog it couldn't close is named in the result
 ("dismiss it by screen sharing").

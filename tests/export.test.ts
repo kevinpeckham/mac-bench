@@ -73,9 +73,12 @@ describe("exportFile", () => {
 		// only the folder path is ever typed
 		expect(ax.log.filter((a) => a[0] === "set")).toHaveLength(1);
 		expect(ax.log.find((a) => a[0] === "set")?.at(-1)).toMatch(/\/out-[\w-]+\/$/);
-		// never into the document window, never its decoy buttons
-		for (const a of ax.log.filter((a) => ["dump", "press", "set"].includes(a[0] as string)))
+		// never into the document window, never its decoy buttons: a dump without
+		// --dialogs (looking for the MIDI Import Options window) reads titles only
+		for (const a of ax.log.filter((a) => ["press", "set"].includes(a[0] as string)))
 			expect(a).toContain("--dialogs");
+		for (const a of ax.log.filter((a) => a[0] === "dump" && !a.includes("--dialogs")))
+			expect(a[a.indexOf("--depth") + 1]).toBe("1");
 		expect(ax.decoysPressed).toEqual([]);
 		expect(closes(fake)).toHaveLength(1);
 		expect(fake.projects.size).toBe(0);

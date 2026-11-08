@@ -25,6 +25,17 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
   will work.
 - `scripts/record.ts` and `scripts/record-two.ts` record Dorico's Remote
   Control messages; the tests replay them through a fake Dorico.
+- **Dorico MIDI import:** `bin/mac-bench dorico --midi [--export
+  musicxml|mxl] <file.mid…>` has Dorico import each Standard MIDI File,
+  accept its MIDI Import Options window as it comes (OK, no option
+  changed) and export the result as MusicXML (default) or `.mxl`, written
+  as `<base>.dorico.musicxml`; what the window showed (its two checkboxes
+  and each track's name, instrument, destination and note counts) is
+  written beside it as `<base>.midi-import.json`. The helper takes it as
+  `POST /jobs` with `import=midi` (anything else is a 400), the files as
+  bytes; a file not starting with `MThd` is refused, by the CLI before
+  sending and by the job. A job that fails at the window says which
+  windows Dorico showed.
 
 ### Changed
 
@@ -44,3 +55,17 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
   types only while Dorico is frontmost, writes only inside the helper's
   work folder, and is signed with the hardened runtime (no `DYLD_*`
   injection).
+- Dorico's MIDI Import Options window, a standard window that
+  `--dialogs` doesn't see, counts as a dialog wherever one is checked for:
+  an export or MIDI job won't start with one open, won't press OK in
+  Export MusicXML beside one, and its failsafe cancels one (Cancel in that
+  window, then Escape). Its OK and Cancel are pressed only after a full
+  dump shows the press will land in that window, never in a document's.
+  The press is refused when a level before it lists as many children as
+  MacBenchAX's dump shows (200), since the press walks them all. Once OK
+  is pressed, a failure (a late answer, a dump Dorico was too busy for)
+  still waits for the project and closes it, or says to close it if it
+  comes later; the project is the first newer than any seen just before
+  OK, so one opened while the window waited is never taken for it. Deep
+  dumps get 60 s to answer and their times are recorded in
+  `<base>.midi-import.json` (`dumps`).

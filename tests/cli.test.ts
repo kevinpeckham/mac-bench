@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { dorico } from "../src/cli/dorico.js";
 import { DoricoClient } from "../src/dorico/client.js";
-import { type ExportFormat, exportFile } from "../src/dorico/export.js";
-import { type JobFile, JobQueue, runFile } from "../src/dorico/job.js";
-import { startServer } from "../src/helper/server.js";
+import { JobQueue, runFiles } from "../src/dorico/job.js";
+import { MAX_BYTES, startServer } from "../src/helper/server.js";
 import { DORICO, FakeAx } from "./fake-ax.js";
 import { FakeDorico } from "./fake-dorico.js";
 
 const TOKEN = "cli-token";
+const MIDI = new Uint8Array([
+	...[0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, 1, 0x01, 0xe0],
+	...[0x4d, 0x54, 0x72, 0x6b, 0, 0, 0, 4, 0, 0xff, 0x2f, 0],
+]);
 const cleanup: (() => void)[] = [];
 afterEach(() => {
 	for (const f of cleanup.splice(0)) f();
@@ -37,16 +40,10 @@ async function helper() {
 		},
 	};
 	const slow = { ...fast, dialogMs: 300, settleMs: 1, pollMs: 5 };
-	const queue = new JobQueue(async (files: JobFile[], format?: ExportFormat) => {
-		const out = [];
-		for (const f of files)
-			out.push(
-				format
-					? await exportFile(deps, f, format, join(dir, "work"), slow)
-					: await runFile(client, f, join(dir, "work"), fast),
-			);
-		return out;
-	});
+	fake.onMidiImport = (file, accept) => ax.showImport(basename(file), accept);
+	const queue = new JobQueue((files, format) =>
+		runFiles(files, format, deps, join(dir, "work"), { pdf: fast, export: slow }),
+	);
 	const server = startServer({ hostname: "127.0.0.1", port: 0, token: TOKEN, client, queue, ax });
 	cleanup.push(() => {
 		server.stop();
@@ -170,5 +167,63 @@ describe("mac-bench dorico", () => {
 		const { url } = await helper();
 		const r = await run(["--health"], url);
 		expect(JSON.parse(r.out.join("\n")).ax).toEqual({ trusted: true });
+	});
+
+	test("--midi writes <base>.dorico.musicxml and the import window as <base>.midi-import.json", async () => {
+		const { url, dir } = await helper();
+		const out = join(dir, "out");
+		const mid = join(dir, "peaceful-dreams.mid");
+		writeFileSync(mid, MIDI);
+		const r = await run(["--midi", mid, "--out", out], url);
+		expect(r.code).toBe(0);
+		expect(r.out).toEqual([
+			`ok ${join(out, "peaceful-dreams.dorico.musicxml")}`,
+			`import ${join(out, "peaceful-dreams.midi-import.json")}`,
+		]);
+		expect(readFileSync(join(out, "peaceful-dreams.dorico.musicxml"), "utf8")).toStartWith(
+			"fake .musicxml",
+		);
+		const window = JSON.parse(readFileSync(join(out, "peaceful-dreams.midi-import.json"), "utf8"));
+		expect(window).toMatchObject({
+			file: "peaceful-dreams.mid",
+			useTrackMemory: true,
+			tracks: [{ name: "Chart", instrument: "Treble staff", destination: "Treble staff 1" }],
+		});
+	});
+
+	test("--midi --export mxl writes <base>.dorico.mxl", async () => {
+		const { url, dir } = await helper();
+		const out = join(dir, "out");
+		const mid = join(dir, "song.midi");
+		writeFileSync(mid, MIDI);
+		const r = await run(["--midi", "--export", "mxl", mid, "--out", out], url);
+		expect(r.code).toBe(0);
+		expect(r.out[0]).toBe(`ok ${join(out, "song.dorico.mxl")}`);
+	});
+
+	test("--midi refuses a file that isn't MIDI before anything is sent", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "mac-bench-cli-"));
+		const [xml] = charts(dir, { "horns.musicxml": XML("Horns") });
+		const r = await run(["--midi", xml as string], "http://127.0.0.1:9");
+		expect(r.code).toBe(1);
+		expect(r.err.join("\n")).toContain("not a Standard MIDI File (no MThd header): horns.musicxml");
+		expect(r.err.join("\n")).not.toContain("can't reach");
+	});
+
+	test("--midi refuses files over the helper's size cap before anything is sent", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "mac-bench-cli-"));
+		const big = join(dir, "big.mid");
+		const bytes = new Uint8Array(MAX_BYTES + 1);
+		bytes.set(MIDI);
+		writeFileSync(big, bytes);
+		const r = await run(["--midi", big], "http://127.0.0.1:9");
+		expect(r.code).toBe(1);
+		expect(r.err.join("\n")).toContain("larger than");
+		expect(r.err.join("\n")).not.toContain("can't reach");
+	});
+
+	test("usage names --midi", async () => {
+		const r = await run([], "http://127.0.0.1:9");
+		expect(r.err.join("\n")).toContain("--midi");
 	});
 });

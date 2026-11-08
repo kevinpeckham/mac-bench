@@ -13,6 +13,7 @@ export type Step =
 	| "ax"
 	| "preflight"
 	| "open"
+	| "import"
 	| "focus"
 	| "dialog"
 	| "options"
@@ -29,12 +30,11 @@ export const LEFT_OPEN = "the job's project is left open in Dorico: close it wit
 export const isMusicXml = (xml: string) =>
 	/<score-(partwise|timewise)[\s>]/.test(xml.slice(0, 2048));
 
-/** A file name safe to write: letters, digits, dot, dash and underscore. */
-export const safeName = (name: string) =>
-	(name.replace(/^.*[\\/]/, "").replace(/[^\w.-]+/g, "_") || "score").replace(
-		/(\.musicxml)?$/,
-		".musicxml",
-	);
+/** A file name safe to write: letters, digits, dot, dash and underscore, ending `ext`. */
+export const safeName = (name: string, ext = ".musicxml") => {
+	const safe = name.replace(/^.*[\\/]/, "").replace(/[^\w.-]+/g, "_") || "score";
+	return safe.endsWith(ext) ? safe : `${safe}${ext}`;
+};
 
 export class StepError extends Error {
 	constructor(

@@ -16,6 +16,13 @@
  * dialog is modal: while one is up, the menu and the windows behind it don't
  * respond. The main window holds decoy OK and Cancel buttons: pressing one
  * is recorded in `decoysPressed`.
+ *
+ * Dorico's MIDI Import Options window (screenshot of 2026-11-08) is a
+ * standard window, not a dialog: `--dialogs` never sees it, a full dump and
+ * an unscoped press do. `showImport` puts it up (FakeDorico calls it when a
+ * `.mid` is opened); its OK accepts the import (Dorico then makes the
+ * project), its Cancel and Escape drop it. Like main.swift's walk, a press
+ * looks at most 14 levels into a window.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -37,6 +44,30 @@ export const MXL = "Export compressed XML (.mxl)";
 export const XML = "Export uncompressed XML (.musicxml)";
 export const SEPARATE = "Export layouts as separate files";
 export const FOLDER = "Create folder for exported files";
+export const IMPORT = "MIDI Import Options";
+export const TRACK_MEMORY = "Use track memory";
+export const GENERAL_MIDI = "Interpret as General MIDI";
+
+/** A row of the import window's tracks table, as the screenshot shows it. */
+export type ImportTrack = {
+	name: string;
+	instrument: string;
+	technique?: string;
+	family: string;
+	destination: string;
+	maxNotes: number;
+	notes: number;
+	enabled?: boolean;
+};
+
+export const PEACEFUL_DREAMS_TRACK: ImportTrack = {
+	name: "Chart",
+	instrument: "Treble staff",
+	family: "Sketch",
+	destination: "Treble staff 1",
+	maxNotes: 5,
+	notes: 583,
+};
 
 export type FakeAxOptions = {
 	trusted?: boolean;
@@ -72,6 +103,20 @@ export type FakeAxOptions = {
 	goToLostOnce?: boolean;
 	/** The first Return in the Go to Folder sheet closes it without going there, as it did live. */
 	goToMissesOnce?: boolean;
+	/** The tracks the MIDI Import Options window lists. */
+	importTracks?: ImportTrack[];
+	/** Whether the import window's OK accepts the import. */
+	importOkTakes?: boolean;
+	/** Neither Cancel nor Escape closes the import window. */
+	importStuck?: boolean;
+	/** The import window is listed behind the document window. */
+	importBehind?: boolean;
+	/** The import window's buttons sit deeper than a press looks (15 levels). */
+	importButtonsDeep?: boolean;
+	/** The document window holds, before its decoys, a text whose AXValue is the import window's title. */
+	docMarker?: boolean;
+	/** The document window holds a group of 200 children (as many as MacBenchAX's dump lists). */
+	docWide?: boolean;
 };
 
 const DEFAULTS: Record<string, 0 | 1> = {
@@ -82,6 +127,9 @@ const DEFAULTS: Record<string, 0 | 1> = {
 };
 
 type Options = Required<Omit<FakeAxOptions, "initial" | "stuck">> & { stuck: string | null };
+
+/** How deep main.swift's walk looks into a window. */
+const WALK_DEPTH = 14;
 
 export class FakeAx implements AxClient {
 	/** Every command run, as its arguments. */
@@ -102,6 +150,12 @@ export class FakeAx implements AxClient {
 	readonly decoysPressed: string[] = [];
 	/** Called on every command, before the fake acts on it. */
 	onRun: ((args: string[]) => void) | null = null;
+	/** The MIDI file the import window names, while it is up. */
+	importFile: string | null = null;
+	/** The import window's two checkboxes. */
+	readonly importBoxes: Record<string, 0 | 1> = { [TRACK_MEMORY]: 1, [GENERAL_MIDI]: 1 };
+	/** What OK in the import window does (Dorico makes the project). */
+	private importAccept: (() => void) | null = null;
 	private readonly o: Options;
 	private menus = 0;
 	/** Presses left that find nothing while the dialog rebuilds (FakeAxOptions.rebuildLooks). */
@@ -128,6 +182,13 @@ export class FakeAx implements AxClient {
 			rebuildLooks: 0,
 			goToLostOnce: false,
 			goToMissesOnce: false,
+			importTracks: [PEACEFUL_DREAMS_TRACK],
+			importOkTakes: true,
+			importStuck: false,
+			importBehind: false,
+			importButtonsDeep: false,
+			docMarker: false,
+			docWide: false,
 			...opts,
 			stuck: opts.stuck ?? null,
 		};
@@ -154,13 +215,30 @@ export class FakeAx implements AxClient {
 			.map((a) => a[a.indexOf("--title") + 1] as string);
 	}
 
-	/** Whether any dialog is up (they are all modal). */
+	/** Whether any dialog (or the import window) is up: they are all modal. */
 	get modal(): boolean {
-		return this.exportOpen || this.openPanel;
+		return this.exportOpen || this.openPanel || this.importFile !== null;
 	}
 
-	async run(args: string[]): Promise<Record<string, unknown>> {
+	/** Dorico's MIDI Import Options window, for `file`; `accept` is what its OK does. */
+	showImport(file: string, accept: () => void): void {
+		this.importFile = file;
+		this.importAccept = accept;
+	}
+
+	private closeImport(accepted: boolean) {
+		const accept = this.importAccept;
+		this.importFile = null;
+		this.importAccept = null;
+		if (accepted) accept?.();
+	}
+
+	/** The options each command was run with, by index in `log`. */
+	readonly runOptions: ({ timeoutMs?: number } | undefined)[] = [];
+
+	async run(args: string[], options?: { timeoutMs?: number }): Promise<Record<string, unknown>> {
 		this.log.push(args);
+		this.runOptions.push(options);
 		this.onRun?.(args);
 		const arg = (name: string) => {
 			const i = args.indexOf(name);
@@ -238,6 +316,7 @@ export class FakeAx implements AxClient {
 			else if (this.openPanel && this.o.stuck !== "Open") this.openPanel = false;
 			else if (this.exportOpen && !this.openPanel && this.o.stuck !== "Export MusicXML")
 				this.exportOpen = false;
+			else if (this.importFile !== null && !this.o.importStuck) this.closeImport(false);
 		}
 		return { keys: combo.split("+"), ok: true };
 	}
@@ -276,13 +355,18 @@ export class FakeAx implements AxClient {
 	): Record<string, unknown> {
 		let seen = after === undefined;
 		for (const w of this.scope(scoped)) {
-			const el = find(w, (n) => {
-				if (!seen) {
-					if (n.AXTitle === after || n.AXValue === after) seen = true;
-					return false;
-				}
-				return n.AXTitle === title && (role === undefined || n.AXRole === role);
-			});
+			const el = find(
+				w,
+				(n) => {
+					if (!seen) {
+						if (n.AXTitle === after || n.AXValue === after) seen = true;
+						return false;
+					}
+					return n.AXTitle === title && (role === undefined || n.AXRole === role);
+				},
+				undefined,
+				WALK_DEPTH,
+			);
 			if (el) {
 				this.actions.get(el)?.();
 				return { pressed: title, ok: true };
@@ -323,6 +407,7 @@ export class FakeAx implements AxClient {
 	/** Front to back, as AXWindows lists them. */
 	windows(): AxNode[] {
 		const ws: AxNode[] = [];
+		if (this.importFile !== null && !this.o.importBehind) ws.push(this.importWindow());
 		if (this.openPanel) ws.push(this.openDialog());
 		if (this.exportOpen) ws.push(this.exportDialog());
 		if (this.o.palette)
@@ -338,6 +423,15 @@ export class FakeAx implements AxClient {
 			AXSubrole: "AXStandardWindow",
 			AXTitle: `${this.o.title} - Full score`,
 			children: [
+				...(this.o.docMarker ? [{ AXRole: "AXStaticText", AXValue: IMPORT }] : []),
+				...(this.o.docWide
+					? [
+							{
+								AXRole: "AXGroup",
+								children: Array.from({ length: 200 }, () => ({ AXRole: "AXStaticText" })),
+							},
+						]
+					: []),
 				{
 					AXRole: "AXGroup",
 					children: [
@@ -348,7 +442,118 @@ export class FakeAx implements AxClient {
 				},
 			],
 		});
+		if (this.importFile !== null && this.o.importBehind) ws.push(this.importWindow());
 		return ws;
+	}
+
+	/** The MIDI Import Options window, laid out as Qt might list the screenshot's. */
+	private importWindow(): AxNode {
+		const text = (v: string): AxNode => ({ AXRole: "AXStaticText", AXValue: v });
+		const cell = (...children: AxNode[]): AxNode => ({ AXRole: "AXCell", children });
+		const box = (title: string) =>
+			this.node(
+				{ AXRole: "AXCheckBox", AXTitle: title, AXValue: this.importBoxes[title] ?? 0 },
+				() => {
+					this.importBoxes[title] = this.importBoxes[title] ? 0 : 1;
+				},
+			);
+		const columns = [
+			"#",
+			"",
+			"MIDI track name",
+			"",
+			"Instrument(s) in track",
+			"Technique(s)",
+			"Family",
+			"Destination instrument",
+			"Max. sim. notes",
+			"Total no. of notes",
+		];
+		const rows = this.o.importTracks.map(
+			(t, i): AxNode => ({
+				AXRole: "AXRow",
+				children: [
+					cell(text(String(i + 1))),
+					cell({ AXRole: "AXCheckBox", AXValue: t.enabled === false ? 0 : 1 }),
+					cell(text(t.name)),
+					cell({ AXRole: "AXImage" }),
+					cell(text(t.instrument)),
+					cell(...(t.technique ? [text(t.technique)] : [])),
+					cell(text(t.family)),
+					cell(text(t.destination)),
+					cell(text(String(t.maxNotes))),
+					cell(text(String(t.notes))),
+				],
+			}),
+		);
+		let buttons: AxNode = {
+			AXRole: "AXGroup",
+			children: [
+				{ AXRole: "AXButton", AXDescription: "Help" },
+				this.button("Cancel", () => {
+					if (!this.o.importStuck) this.closeImport(false);
+				}),
+				this.button("OK", () => {
+					if (this.o.importOkTakes) this.closeImport(true);
+				}),
+			],
+		};
+		if (this.o.importButtonsDeep)
+			for (let i = 0; i < WALK_DEPTH; i++) buttons = { AXRole: "AXGroup", children: [buttons] };
+		return {
+			AXRole: "AXWindow",
+			AXSubrole: "AXStandardWindow",
+			AXTitle: IMPORT,
+			children: [
+				{ AXRole: "AXButton", AXSubrole: "AXCloseButton" },
+				{ AXRole: "AXButton", AXSubrole: "AXMinimizeButton" },
+				{ AXRole: "AXButton", AXSubrole: "AXZoomButton" },
+				{
+					AXRole: "AXGroup",
+					children: [
+						text("Importing MIDI File:"),
+						text(this.importFile ?? ""),
+						box(TRACK_MEMORY),
+						box(GENERAL_MIDI),
+					],
+				},
+				{
+					AXRole: "AXGroup",
+					children: [
+						text("Tracks from the MIDI file"),
+						{
+							AXRole: "AXTabGroup",
+							children: [
+								{ AXRole: "AXRadioButton", AXTitle: "Basic editor", AXValue: 1 },
+								{ AXRole: "AXRadioButton", AXTitle: "Advanced editor", AXValue: 0 },
+							],
+						},
+						{ AXRole: "AXTextField", AXDescription: "Filter..." },
+						this.button("Show all", () => {}),
+						this.button("Show only enabled", () => {}),
+						{
+							AXRole: "AXTable",
+							children: [
+								{
+									AXRole: "AXGroup",
+									children: // main.swift leaves out an empty title
+										columns.map((c) =>
+											c ? { AXRole: "AXButton", AXTitle: c } : { AXRole: "AXButton" },
+										),
+								},
+								...rows,
+							],
+						},
+						this.button("Enable Selected", () => {}),
+						this.button("Disable Selected", () => {}),
+						this.button("Invert Selection", () => {}),
+						this.button("Select All", () => {}),
+					],
+				},
+				{ AXRole: "AXDisclosureTriangle", AXTitle: "Import Options", AXValue: 0 },
+				buttons,
+			],
+		};
 	}
 
 	private exportDialog(): AxNode {
@@ -463,16 +668,21 @@ export class FakeAx implements AxClient {
 	}
 }
 
-/** The first node under `n` (preorder) that `match` accepts, not looking inside `skip`. */
+/**
+ * The first node under `n` (preorder) that `match` accepts, not looking
+ * inside `skip`, nor more than `depth` levels down.
+ */
 function find(
 	n: AxNode,
 	match: (n: AxNode) => boolean,
 	skip: (n: AxNode) => boolean = () => false,
+	depth = Number.POSITIVE_INFINITY,
 ): AxNode | null {
 	if (match(n)) return n;
+	if (depth <= 0) return null;
 	for (const c of n.children ?? []) {
 		if (skip(c)) continue;
-		const hit = find(c, match, skip);
+		const hit = find(c, match, skip, depth - 1);
 		if (hit) return hit;
 	}
 	return null;

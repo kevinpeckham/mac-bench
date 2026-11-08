@@ -201,6 +201,33 @@ program's code, not against what the spike happened to see.
   exported to a wrong folder. After the fixes: ten exports in a row (five
   fixtures, `.mxl` and `.musicxml`), each identical to the spike's.
 
+## Dorico's MIDI import (Elements 6.2.31, 2026-11-08)
+
+### The MIDI Import Options window is a standard window, which `--dialogs` misses
+
+Symptom: `File.Open?File=<path>.mid` answered `kOK` but `hasScore` stayed
+false; Dorico showed a window titled "MIDI Import Options" (track memory,
+General MIDI, the tracks table, Cancel / OK) and waited. The export job's
+preflight (`dump --dialogs`) didn't see it, and the next job's `File.Open`
+timed out behind it. Cause: the window has traffic-light buttons, a
+standard window rather than an `AXDialog`, and `--dialogs` looks only at
+dialogs and sheets. Fix: the import window counts as a dialog wherever one
+is checked for (`blocking`, `src/dorico/export.ts`): it is found by title
+in a one-level full dump, and pressed with an unscoped `press --after
+"MIDI Import Options"`, only once a full dump as deep as the press looks
+shows the press lands in that window (`pressInImport`,
+`src/dorico/import-window.ts`). The MIDI job accepts it with OK and waits
+for the project (`src/dorico/midi.ts`); the failsafe cancels it.
+
+### A probe outside the helper left Dorico blocked
+
+Symptom: a `.mid` opened over Remote Control from an SSH probe left the
+import window up, with nothing able to close it. Cause: MacBenchAX can't be
+launched from SSH (no GUI session; `launchctl asuser` needs root), so only
+the helper, a launchd agent in the GUI session, can answer Dorico's
+windows. Fix: always go through the helper (CLAUDE.md rule); its MIDI job
+cancels the window whatever happens.
+
 ## Process
 
 ### A broad file search set off macOS's Photos permission prompt (2026-11-05)

@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { ENV } from "varlock/env";
 import { macBenchAx } from "../ax/client.js";
 import { DoricoClient } from "../dorico/client.js";
-import { type ExportFormat, exportFile } from "../dorico/export.js";
-import { type JobFile, JobQueue, pruneJobs, runFile } from "../dorico/job.js";
+import { JobQueue, pruneJobs, runFiles } from "../dorico/job.js";
 import { startServer } from "./server.js";
 import { tailnetAddress } from "./tailnet.js";
 
@@ -42,16 +41,9 @@ const activate = async () => {
 	await Bun.sleep(300); // the switch lands a moment after open returns
 };
 
-const queue = new JobQueue(async (files: JobFile[], format?: ExportFormat) => {
-	const results = [];
-	for (const file of files)
-		results.push(
-			format
-				? await exportFile({ dorico: client, ax, activate }, file, format, WORK)
-				: await runFile(client, file, WORK),
-		);
-	return results;
-});
+const queue = new JobQueue((files, format) =>
+	runFiles(files, format, { dorico: client, ax, activate }, WORK),
+);
 
 pruneJobs(WORK, KEEP_FAILED_MS);
 setInterval(() => pruneJobs(WORK, KEEP_FAILED_MS), 86_400_000);
