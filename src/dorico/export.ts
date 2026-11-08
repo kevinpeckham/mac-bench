@@ -9,13 +9,15 @@
  * receives the export. A job starts only if Dorico shows no dialog and no
  * open menu. Whatever happens, a failsafe cancels every dialog left open
  * and closes any open menu, and the project is closed unsaved, by its ID,
- * while it is in front. The only text ever typed is the folder path; the
- * only OK pressed is the Export MusicXML dialog's, and Return is sent only
- * to the Go to Folder sheet once it holds that path. Dorico's standard
- * windows (a MIDI Import Options window among them) can't be seen through
- * Accessibility (`import-window.ts`): nothing here looks for one, and one
- * left open shows only as a `File.Open` that makes nothing. The MIDI job
- * (`midi.ts`) shares the export path (`exportProject`) and the wrap-up.
+ * while it is in front. The only text this file types is the folder path;
+ * the only OK it presses is the Export MusicXML dialog's, and it sends
+ * Return only to the Go to Folder sheet once that holds the path. The MIDI
+ * job (`midi.ts`) shares the export path (`exportProject`) and the wrap-up,
+ * and also presses OK in, or sends Return to, Dorico's MIDI Import Options
+ * window (its own rules are there). A dialog-shaped import window counts as
+ * a dialog here like any other (preflight refuses one, the failsafe cancels
+ * one); an opaque one can't be seen (`import-window.ts`) and shows only as
+ * a `File.Open` that makes nothing.
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -363,8 +365,9 @@ async function pressEscape(deps: ExportDeps, t: ExportTimeouts) {
  * Cancel every dialog Dorico has open and close an open menu: up to four
  * rounds of `dismiss` (Escape first for a menu), from the second with
  * Escape too, which closes what has no Cancel (the Go to Folder sheet).
- * Returns what is still open, as an error, or null. A MIDI Import Options
- * window can't be seen, so it is never cancelled here.
+ * Returns what is still open, as an error, or null. A dialog-shaped MIDI
+ * Import Options window is cancelled here like any dialog (`dismiss`
+ * presses its Cancel); an opaque one can't be seen, so it never is.
  */
 async function failsafe(deps: ExportDeps, t: ExportTimeouts): Promise<string | null> {
 	try {

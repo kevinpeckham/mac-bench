@@ -44,6 +44,8 @@ export class FakeDorico {
 	replyDelayMs = 0;
 	/** Called right after an import adds its project (and its status is pushed). */
 	onOpened: ((id: number) => void) | null = null;
+	/** Called right after a project is closed. */
+	onClosed: ((id: number) => void) | null = null;
 	/**
 	 * Called when a `.mid` is opened, in place of making a project: `accept`
 	 * makes it (the import window accepted). Unset, the file just sits there.
@@ -248,7 +250,7 @@ export class FakeDorico {
 				ok();
 				const id = Number(params.get("OpenScoreID") ?? this.active);
 				const closed = this.projects.get(id);
-				this.projects.delete(id);
+				const had = this.projects.delete(id);
 				this.active = null;
 				// The push after a close keeps the closed ID (probe.log).
 				this.push({
@@ -256,6 +258,7 @@ export class FakeDorico {
 					activeViewContainerID: closed?.viewContainer,
 					hasScore: false,
 				});
+				if (had) this.onClosed?.(id);
 				return;
 			}
 			case "Window.SwitchToLayout":

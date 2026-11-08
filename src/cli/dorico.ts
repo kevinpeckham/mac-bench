@@ -4,8 +4,10 @@
  * back the PDFs Dorico engraved, or with `--export` the MusicXML (or .mxl)
  * Dorico exported, as `<input base>.dorico.musicxml` / `.dorico.mxl`. With
  * `--midi` the files are Standard MIDI Files, which Dorico imports and
- * exports (as MusicXML unless `--export mxl`). Takes its config and output
- * as arguments (`main.ts` reads the env).
+ * exports (as MusicXML unless `--export mxl`); what its MIDI Import Options
+ * window showed, when Dorico showed it as a readable dialog, is written
+ * beside each as `<base>.midi-import.json`. Takes its config and output as
+ * arguments (`main.ts` reads the env).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
@@ -23,8 +25,8 @@ export type DoricoIo = {
 };
 
 type Result =
-	| { name: string; ok: true; pdf?: string; file?: string }
-	| { name: string; ok: false; step: string; message: string };
+	| { name: string; ok: true; pdf?: string; file?: string; importWindow?: unknown }
+	| { name: string; ok: false; step: string; message: string; importWindow?: unknown };
 
 export const USAGE =
 	"usage: mac-bench dorico [--export musicxml|mxl] <file.musicxml…> [--out <dir>] | --midi [--export musicxml|mxl] <file.mid…> [--out <dir>] | --health";
@@ -138,6 +140,11 @@ export async function dorico(args: string[], io: DoricoIo): Promise<number> {
 			writeFileSync(path, Buffer.from((format ? r.file : r.pdf) ?? "", "base64"));
 			io.out(`ok ${path}`);
 		} else io.out(`FAIL ${r.name}: ${r.step}: ${r.message}`);
+		if (r.importWindow !== undefined) {
+			const json = `${path.slice(0, -ext.length)}.midi-import.json`;
+			writeFileSync(json, `${JSON.stringify(r.importWindow, null, 2)}\n`);
+			io.out(`import ${json}`);
+		}
 	}
 	return results.every((r) => r.ok) ? 0 : 1;
 }

@@ -19,16 +19,22 @@ ok dorico-runs/20261107-190000/horns.dorico.musicxml
 ```
 
 **MIDI imports** — Dorico imports a Standard MIDI File (accepting its
-MIDI Import Options window as it comes, with Return) and exports MusicXML.
+MIDI Import Options window as it comes) and exports MusicXML. When Dorico
+shows that window as a readable dialog (with no project open), what it
+showed (each track's instrument and destination) is written beside it,
+with the window's whole Accessibility tree as `raw`: compare that with
+the dialog `tests/fake-ax.ts` draws, which is partly a guess (FINDINGS).
 Don't open or click a project while a MIDI job runs:
 
 ```
 bin/mac-bench dorico --midi peaceful-dreams.mid
 ok dorico-runs/20261108-120000/peaceful-dreams.dorico.musicxml
+import dorico-runs/20261108-120000/peaceful-dreams.midi-import.json
 ```
 
-Dorico's MIDI Import Options window can't be seen through Accessibility
-(FINDINGS): a job that fails at the import may leave it open on the Mac.
+With a project window open, Dorico's MIDI Import Options window can't be
+seen through Accessibility (FINDINGS): the job then accepts it with
+Return, and one that fails at the import may leave it open on the Mac.
 Cancel it there (by screen sharing), or every later job's `File.Open`
 times out behind it.
 
@@ -107,13 +113,14 @@ anything else: if you click into your own project mid-job, the job stops
 and says so, leaving its own project open for you to close (Don't Save).
 
 An export job also brings Dorico to the front and works its Export
-MusicXML dialog for a few seconds (a MIDI job first sends Return to its
-MIDI Import Options window): keep your hands off the keyboard and mouse
+MusicXML dialog for a few seconds (a MIDI job first accepts its MIDI
+Import Options window): keep your hands off the keyboard and mouse
 meanwhile (a key typed into the folder sheet would go into the path, and
-a click could make another window the one Return goes to). The only OK it
-presses is the Export MusicXML dialog's; Return goes only to the Go to
-Folder sheet once it holds the path, and to the MIDI Import Options window
-once, when Dorico's window count rose by one after opening the `.mid` and
-no project appeared. Whatever happens, it cancels any dialog it leaves open
+a click could make another window the one Return goes to). The OKs it
+presses are the Export MusicXML dialog's and, when the MIDI Import Options
+window is a readable dialog, that one's, each scoped to dialogs; Return
+goes only to the Go to Folder sheet once it holds the path, and, only when
+the import window is opaque, to it once, when Dorico's window count rose
+by one after opening the `.mid` and no project appeared. Whatever happens, it cancels any dialog it leaves open
 and closes its project unsaved; a dialog it couldn't close is named in the
 result ("dismiss it by screen sharing").

@@ -10,8 +10,9 @@ Design: `docs/superpowers/specs/2026-11-05-dorico-checks-design.md`.
 - `src/dorico/`: the Remote Control client (`client.ts`, `protocol.ts`,
   `token.ts`), the steps jobs share (`steps.ts`), the PDF job and the
   queue (`job.ts`), the MusicXML export job (`export.ts`), the MIDI job
-  (`midi.ts`) and counting Dorico's windows, which Accessibility can't see
-  into (`import-window.ts`)
+  (`midi.ts`) and Dorico's MIDI Import Options window in its two shapes,
+  a readable dialog or an opaque window that can only be counted
+  (`import-window.ts`)
 - `ax/`: MacBenchAX (`main.swift`, `Info.plist`), the one app granted
   Accessibility on the Mac; `src/ax/client.ts` launches it and reads its
   answers (`AxClient`, injected everywhere so tests use `tests/fake-ax.ts`)
@@ -24,9 +25,11 @@ Design: `docs/superpowers/specs/2026-11-05-dorico-checks-design.md`.
 - `tests/fake-dorico.ts`: a fake Remote Control server reproducing the
   recordings (a `.mid` waits for the import window to be accepted);
   `tests/fake-ax.ts` models Dorico's export dialogs as state, and its
-  standard windows (project windows, the MIDI Import Options window) as
-  the real ones describe themselves: as the application, self-similar
-  (FINDINGS); `connect` wires the two fakes;
+  windows in both shapes the real ones take (FINDINGS): with only the Hub,
+  the Hub a standard window and the import window a readable dialog; with
+  a project window open, its standard windows as the application,
+  self-similar (`importShape` forces one); `connect` wires the two fakes
+  (a `.mid` shows the import window, each project opens a window);
   every test runs against fakes, none needs Dorico, a Mac or the env
 
 ## Commands
@@ -36,7 +39,7 @@ bun test                                   # tests (no env, no Dorico)
 bun run check                              # Biome (tabs) and tsc
 bin/mac-bench dorico <file.musicxml…>      # on the VM, from any folder: PDFs into ./dorico-runs/
 bin/mac-bench dorico --export musicxml|mxl <files…>   # Dorico's MusicXML export: <base>.dorico.musicxml|mxl
-bin/mac-bench dorico --midi [--export musicxml|mxl] <file.mid…>   # MIDI import, then the export
+bin/mac-bench dorico --midi [--export musicxml|mxl] <file.mid…>   # MIDI import, then the export; + <base>.midi-import.json when the window was readable
 bin/mac-bench dorico --health              # includes ax.trusted
 bun scripts/build-ax.ts [--rebuild]        # on the Mac: build MacBenchAX (then grant it: README)
 bun run helper                             # on the Mac (launchd runs this)
@@ -63,20 +66,30 @@ bun run helper                             # on the Mac (launchd runs this)
   (README). It acts only on Dorico by bundle ID, types only while Dorico is
   frontmost, and answers only inside the work folder.
 - An export or MIDI job starts only when Dorico shows no dialog, sheet or
-  open menu (`--dialogs`: never into a document window). Dorico's
-  standard windows, the MIDI Import Options window among them, describe
-  themselves as the application, with no title or contents (FINDINGS):
-  they can only be counted (`dump --depth 0`), never read, and never dump
-  them deep (the tree is self-similar: exponential). The job types nothing
-  but the folder path; the only OK it presses is the Export MusicXML
-  dialog's, when that is the one dialog open; it sends Return only to the
-  Go to Folder sheet once that holds the path, and to the MIDI Import
-  Options window once, never retried, when Dorico's window count rose by
-  one after opening a `.mid`, no project appeared and nothing else is
+  open menu (`--dialogs`: never into a document window); a MIDI Import
+  Options dialog counts as the job's only when the job opened it.
+  Dorico's MIDI Import Options window takes one of two shapes, by
+  Dorico's state (FINDINGS): a readable AXDialog (no project open), or,
+  with a project window open, an opaque window that, like Dorico's other
+  standard windows, describes itself as the application. Opaque windows
+  can only be counted; never dump Dorico's windows unscoped deeper than
+  one level (the tree is self-similar: exponential). The job types
+  nothing but the folder path. The only OKs it presses are the Export
+  MusicXML dialog's and the import window's when that is a readable
+  dialog, each when it is the one dialog open, scoped with `--dialogs`
+  (the import window's also aimed inside it with `--after "MIDI Import
+  Options"`). A project is recorded for closing only once the import
+  window has closed.
+  It sends Return only to the Go to Folder sheet once that holds the
+  path, and, only in the opaque shape, to the import window once, never
+  retried, when Dorico's non-dialog window count rose by one (an opaque
+  one) after opening a `.mid`, no project appeared and nothing else is
   open (Return elsewhere could act as OK or Choose). It changes no option
-  in the import window. It always runs its failsafe (cancel every dialog,
-  close any menu; it can't see the import window) and then closes its
-  project unsaved, unless a dialog stayed open.
+  in the import window. A project that appears without the window, or
+  before it is accepted, is left open, never taken. It always runs its
+  failsafe (cancel every dialog, the dialog-shaped import window
+  included, close any menu; it can't see an opaque one) and then closes
+  its project unsaved, unless a dialog stayed open.
 - Drive Dorico's windows only through the helper: a probe from SSH can't
   reach MacBenchAX (no GUI session) and left the import window up,
   blocking the next job (FINDINGS).
