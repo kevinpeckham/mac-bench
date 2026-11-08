@@ -21,7 +21,9 @@ ok dorico-runs/20261107-190000/horns.dorico.musicxml
 **MIDI imports** — Dorico imports a Standard MIDI File (accepting its
 MIDI Import Options window as it comes) and exports MusicXML. When Dorico
 shows that window as a readable dialog (with no project open), what it
-showed (each track's instrument and destination) is written beside it.
+showed (each track's instrument and destination) is written beside it,
+with the window's whole Accessibility tree as `raw`: compare that with
+the dialog `tests/fake-ax.ts` draws, which is partly a guess (FINDINGS).
 Don't open or click a project while a MIDI job runs:
 
 ```

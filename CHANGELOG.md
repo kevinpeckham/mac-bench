@@ -60,8 +60,14 @@ All notable changes to mac-bench. Format: [Keep a Changelog](https://keepachange
   Options", which the count-only job missed in its second live run ("1
   before File.Open, 1 now"); it is now found by title, read
   (`importWindow`, `<base>.midi-import.json` again) and accepted with its
-  OK scoped to dialogs. With a project window open it is opaque and still
-  accepted with Return.
+  OK scoped to dialogs and aimed inside it (`--after "MIDI Import
+  Options"`). With a project window open it is opaque and still accepted
+  with Return. `importWindow.raw` carries the dialog's whole Accessibility
+  tree, for checking the fake against the real window.
+- Once OK is pressed in the dialog-shaped window, a project is recorded
+  for closing only after the window has closed (Dorico makes the import's
+  project only then): OK that didn't take, or a press that answered
+  `ok: false`, records nothing and says to close a later project.
 - A Return or OK that certainly wasn't sent (MacBenchAX refused it,
   couldn't be launched, or Dorico couldn't be brought forward) now fails
   at once; only one that may have gone (no answer in time, `AxNoAnswer`)

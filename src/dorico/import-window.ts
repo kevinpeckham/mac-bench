@@ -55,12 +55,12 @@ export type Survey = {
 const isOpaque = (w: AxNode) => w.AXRole === "AXApplication";
 
 /**
- * Dorico's windows, at most one level down (each opaque window lists every
- * window again under it): how many are standard, how many opaque, and the
- * one titled as the import window, if any.
+ * Dorico's windows, with no depth (nothing inside them is read; each
+ * opaque window would list every window again under it): how many are
+ * standard, how many opaque, and the one titled as the import window.
  */
-export async function survey(client: AxClient, depth: 0 | 1 = 1): Promise<Survey> {
-	const ws = await allWindows(client, depth);
+export async function survey(client: AxClient): Promise<Survey> {
+	const ws = await allWindows(client, 0);
 	const standard = ws.filter(isStandard);
 	return {
 		standard: standard.length,
@@ -122,6 +122,11 @@ export type ImportWindow = {
 	interpretAsGeneralMidi: boolean | null;
 	columns: string[];
 	tracks: ImportTrack[];
+	/**
+	 * The window as MacBenchAX dumped it (`dump --dialogs --depth 12`), whole:
+	 * the fakes' guess at its layout is checked against this (FINDINGS).
+	 */
+	raw?: AxNode;
 };
 
 /** A cell's text: its own or its first descendant's title or value (a checkbox's isn't text). */

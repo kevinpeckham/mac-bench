@@ -181,8 +181,13 @@ describe.each(SHAPES)("importMidi, %s shape", (shape) => {
 				},
 			});
 			expect(okPresses(ax)).toEqual([
-				["press", "--dialogs", "--title", "OK", "--role", "AXButton"],
+				["press", "--dialogs", "--title", "OK", "--role", "AXButton", "--after", IMPORT],
 			]);
+			// the window's raw tree, for checking the fake against the real thing
+			expect(r.importWindow?.raw).toMatchObject({ AXSubrole: "AXDialog", AXTitle: IMPORT });
+			const raw = JSON.stringify(r.importWindow?.raw);
+			for (const t of ["AXGrowArea", "AXTable", TRACK_MEMORY, "Treble staff 1", '"OK"'])
+				expect(raw).toContain(t);
 			expect(importReturns(ax)).toEqual([]);
 		} else {
 			expect("importWindow" in r).toBe(false);
@@ -191,9 +196,9 @@ describe.each(SHAPES)("importMidi, %s shape", (shape) => {
 			const firstReturn = ax.log.findIndex((a) => a[0] === "keys" && a.includes("return"));
 			expect(activations).toContain(firstReturn);
 		}
-		// Dorico's whole window list is only ever dumped one level down
+		// Dorico's whole window list is only ever dumped with no depth
 		for (const a of ax.log.filter((a) => a[0] === "dump" && !a.includes("--dialogs")))
-			expect(Number(a[a.indexOf("--depth") + 1])).toBeLessThanOrEqual(1);
+			expect(a[a.indexOf("--depth") + 1]).toBe("0");
 		expect(unscopedPresses(ax)).toEqual([]);
 		expect(ax.importBoxes).toEqual({ [TRACK_MEMORY]: 1, [GENERAL_MIDI]: 1 });
 		expect(ax.log.filter((a) => a[0] === "set")).toHaveLength(1); // the export's folder path only
@@ -310,7 +315,13 @@ describe.each(SHAPES)("importMidi, %s shape", (shape) => {
 		const started = Date.now();
 		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
 		expect(r).toMatchObject({ ok: false, step: "import" });
-		if (!r.ok) expect(r.message).toContain("the frontmost app isn't one MacBenchAX may type into");
+		if (!r.ok) {
+			expect(r.message).toContain("the frontmost app isn't one MacBenchAX may type into");
+			if (shape === "dialog") {
+				expect(r.message).toContain("the failsafe cancels the window");
+				expect(r.message).not.toContain("Cancel it there");
+			} else expect(r.message).toContain("Cancel it there");
+		}
 		expect(fake.projects.has(kevin)).toBe(true);
 		expect(closes(fake)).toEqual([]);
 		expect(Date.now() - started).toBeLessThan(FAST.openMs + 300); // no wait for a project
@@ -348,19 +359,56 @@ describe.each(SHAPES)("importMidi, %s shape", (shape) => {
 });
 
 describe("importMidi, dialog shape", () => {
-	test("OK not taking: an import error, and the failsafe cancels the window", async () => {
+	test("OK not taking: an import error, the failsafe cancels the window, a project then appearing is never closed", async () => {
 		const { fake, ax, deps, work } = await setup({ ...STATE.dialog, importOkTakes: false });
+		let kevin = -1;
+		ax.onRun = (a) => {
+			if (kevin < 0 && a[0] === "press" && a.includes("OK")) kevin = kevinOpens(fake, work);
+		};
 		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
 		expect(r).toMatchObject({ ok: false, step: "import" });
 		if (!r.ok) {
 			expect(r.message).toContain("OK didn't take");
+			expect(r.message).toContain("close it without saving");
 			expect(r.message).not.toContain("still open: ");
 		}
+		expect(fake.projects.has(kevin)).toBe(true);
 		expect(r.importWindow?.tracks).toHaveLength(1); // recorded all the same
 		expect(okPresses(ax)).toHaveLength(1);
 		expect(ax.log.some((a) => a[0] === "dismiss")).toBe(true);
 		expect(ax.importFile).toBeNull();
 		expect(closes(fake)).toHaveLength(0);
+	});
+
+	test("a second dialog with its own OK, listed first, showing just before the press: the import's OK is pressed", async () => {
+		const { ax, deps, work } = await setup({ ...STATE.dialog, writesFile: false });
+		ax.onRun = (a) => {
+			if (a[0] === "press" && a.includes("OK") && ax.importFile !== null) {
+				ax.importBehind = true;
+				ax.exportOpen = true;
+			}
+		};
+		await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
+		expect(ax.okPressed[0]).toBe(IMPORT);
+		expect(ax.okPressed).not.toContain("Export MusicXML");
+	});
+
+	test("OK answered ok: false (AXPress errored): nothing recorded, the message says to close a later project", async () => {
+		const { fake, ax, deps, work } = await setup(STATE.dialog);
+		const run = ax.run.bind(ax);
+		ax.run = async (args) => {
+			const r = await run(args);
+			return args[0] === "press" && args.includes("OK") && ax.okPressed.length === 1
+				? { ...r, ok: false }
+				: r;
+		};
+		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: false, step: "import" });
+		if (!r.ok) {
+			expect(r.message).toContain("OK may have acted");
+			expect(r.message).toContain("close it without saving");
+		}
+		expect(closes(fake)).toEqual([]); // the project the press made is left for Kevin
 	});
 
 	test("a leftover import dialog: refused at preflight, not cancelled", async () => {

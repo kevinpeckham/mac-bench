@@ -10,9 +10,10 @@
  *
  * - "dialog" (no project open): a window titled "MIDI Import Options"
  *   appears, a readable AXDialog. When it is the only dialog or sheet open
- *   and no menu is, the job reads it (`importWindow` in the result),
- *   presses its OK scoped to dialogs (`press --dialogs`), as the Export
- *   MusicXML dialog's OK is pressed, and checks it has gone.
+ *   and no menu is, the job reads it (`importWindow` in the result, with
+ *   the raw tree), presses its OK scoped to dialogs and aimed inside it
+ *   (`press --dialogs --after "MIDI Import Options"`), and checks it has
+ *   gone.
  * - "opaque" (a project window open): no title to find; the window has
  *   shown when Dorico's non-dialog windows number one more than before
  *   `File.Open` and the new one is opaque. With no dialog, sheet or menu
@@ -27,7 +28,8 @@
  * can't prove it came from this job's file, so the job stops and leaves it
  * open. A Return or OK that certainly wasn't sent (a refusal, a launch that
  * failed) fails at once; only one that may have gone (no answer in time)
- * still waits for the project, for `wrapUp` to close. The same preflight,
+ * still waits for the project, for `wrapUp` to close, and for OK only once
+ * the window has closed (`acceptDialog`). The same preflight,
  * failsafe and wrap-up as the export job: the failsafe cancels a
  * dialog-shaped import window (its Cancel), but can't see an opaque one,
  * so one left open is named in the error.
@@ -104,7 +106,7 @@ async function within(dorico: DoricoClient, floor: number, ms: number): Promise<
 /** Just before `File.Open` (preflight has seen no dialog, sheet or menu): what to compare with. */
 async function before(deps: ExportDeps): Promise<Before> {
 	await deps.dorico.status();
-	return { floor: deps.dorico.highestScoreID, ...(await survey(deps.ax, 0)) };
+	return { floor: deps.dorico.highestScoreID, ...(await survey(deps.ax)) };
 }
 
 const LATER = "if a project appears later, close it without saving";
@@ -153,7 +155,7 @@ async function noNewProject(deps: ExportDeps, floor: number, what: string) {
 }
 
 /**
- * Send `accepting` (Return, or OK), then wait for the project. A refusal
+ * Send Return (the opaque shape), then wait for the project. A refusal
  * or a launch that failed means it wasn't sent: fail at once, recording
  * nothing. No answer in time means it may have gone: still wait for the
  * project and record it, for `wrapUp` to close.
@@ -194,7 +196,7 @@ async function acceptOpaque(
 			"import",
 			`won't send Return with these open: ${openThings(open).join(", ")}; ${CANCEL}`,
 		);
-	const now = await survey(deps.ax, 0);
+	const now = await survey(deps.ax);
 	await noNewProject(deps, was.floor, "send Return");
 	if (!oneMoreOpaque(was, now))
 		throw new StepError(
@@ -226,7 +228,19 @@ async function gone(deps: ExportDeps, t: ExportTimeouts): Promise<boolean> {
 	return true;
 }
 
-/** The dialog shape: read it, then OK scoped to dialogs, when it is the one thing open. */
+const FAILSAFE = "the failsafe cancels the window";
+
+/**
+ * The dialog shape: read it, then OK, scoped to dialogs and aimed inside
+ * the import window (`--after` its title: MacBenchAX's walk visits the
+ * window itself first), when it is the one thing open. A press refused or
+ * not launched wasn't sent: fail at once (the failsafe cancels the
+ * window). One answered `ok: false` (the press errored) may have acted:
+ * nothing is recorded. One with no answer may have gone: a project is
+ * recorded only once the window has closed, since Dorico makes the
+ * import's project only then; while the window stays open, nothing is.
+ * Each of these says to close a project that comes later.
+ */
 async function acceptDialog(
 	deps: ExportDeps,
 	t: ExportTimeouts,
@@ -244,19 +258,51 @@ async function acceptDialog(
 	const ws = Array.isArray(r.windows) ? (r.windows as AxNode[]) : [];
 	const w = ws.find(isImport);
 	if (!w) throw new StepError("import", `Dorico's ${IMPORT_WINDOW} window went away before OK`);
-	seen.window = readImportWindow(w);
+	seen.window = { ...readImportWindow(w), raw: w };
 	await noNewProject(deps, was.floor, "press OK");
-	await send(deps, t, was.floor, seen, "OK", () =>
-		axCommand(deps.ax, "press", "--dialogs", "--title", "OK", "--role", "AXButton"),
-	);
-	if (!(await gone(deps, t))) {
-		seen.project = await within(deps.dorico, was.floor, 0);
+	const args = [
+		"press",
+		"--dialogs",
+		"--title",
+		"OK",
+		"--role",
+		"AXButton",
+		"--after",
+		IMPORT_WINDOW,
+	];
+	let answer: Record<string, unknown> | null = null;
+	try {
+		answer = await deps.ax.run(args);
+	} catch (e) {
+		if (!(e instanceof AxNoAnswer))
+			throw new StepError(
+				"import",
+				`OK into the ${IMPORT_WINDOW} window: ${(e as Error).message}; ${FAILSAFE}`,
+			);
+	}
+	if (answer && typeof answer.error === "string")
 		throw new StepError(
 			"import",
-			`OK didn't take: Dorico's ${IMPORT_WINDOW} window is still open after ${t.dialogMs} ms`,
+			`OK into the ${IMPORT_WINDOW} window: MacBenchAX press: ${answer.error}; ${FAILSAFE}`,
 		);
-	}
+	const closed = await gone(deps, t);
+	if (answer?.ok === false)
+		throw new StepError(
+			"import",
+			`OK may have acted though the press errored (ok: false); Dorico's ${IMPORT_WINDOW} window is ${closed ? "gone" : `still open (${FAILSAFE})`}; ${LATER}`,
+		);
+	if (!closed)
+		throw new StepError(
+			"import",
+			`OK didn't take${answer ? "" : " (MacBenchAX gave no answer)"}: Dorico's ${IMPORT_WINDOW} window is still open after ${t.dialogMs} ms; ${FAILSAFE}; ${LATER}`,
+		);
+	// The window closed: the project Dorico makes now is the import's.
 	seen.project = await within(deps.dorico, was.floor, t.openMs);
+	if (!answer)
+		throw new StepError(
+			"import",
+			`MacBenchAX gave no answer to OK, though Dorico's ${IMPORT_WINDOW} window closed${seen.project === null ? `; ${LATER}` : ""}`,
+		);
 	if (seen.project === null)
 		throw new StepError(
 			"import",

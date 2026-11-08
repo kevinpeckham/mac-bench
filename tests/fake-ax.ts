@@ -164,6 +164,10 @@ export class FakeAx implements AxClient {
 	 * "import" (the import window) or "project" (a project window).
 	 */
 	readonly returns: string[] = [];
+	/** The dialogs whose OK button was pressed, in order. */
+	readonly okPressed: string[] = [];
+	/** The dialog-shaped import window is listed after the other dialogs. */
+	importBehind = false;
 	/** Called on every command, before the fake acts on it. */
 	onRun: ((args: string[]) => void) | null = null;
 	/** The MIDI file the import window names, while it is up. */
@@ -468,7 +472,10 @@ export class FakeAx implements AxClient {
 				children: [{ AXRole: "AXButton", AXSubrole: "AXCloseButton" }],
 			});
 		const shape = this.shape;
-		if (this.importFile !== null && shape === "dialog") ws.unshift(this.importDialog());
+		if (this.importFile !== null && shape === "dialog") {
+			if (this.importBehind) ws.push(this.importDialog());
+			else ws.unshift(this.importDialog());
+		}
 		for (const kind of this.standard) {
 			if (kind === "import" && shape === "dialog") continue;
 			const w: AxNode = { AXRole: "AXApplication", AXTitle: "Dorico" };
@@ -564,6 +571,7 @@ export class FakeAx implements AxClient {
 				{ AXRole: "AXButton", AXDescription: "Help" },
 				this.button("Cancel", () => this.closeImport(false)),
 				this.button("OK", () => {
+					this.okPressed.push(IMPORT);
 					if (this.o.importOkTakes) this.closeImport(true);
 				}),
 			],
@@ -628,6 +636,7 @@ export class FakeAx implements AxClient {
 						this.button(
 							"OK",
 							unless(() => {
+								this.okPressed.push("Export MusicXML");
 								this.exportOpen = false;
 								this.write();
 							}),

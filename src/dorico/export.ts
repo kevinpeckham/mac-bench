@@ -365,8 +365,9 @@ async function pressEscape(deps: ExportDeps, t: ExportTimeouts) {
  * Cancel every dialog Dorico has open and close an open menu: up to four
  * rounds of `dismiss` (Escape first for a menu), from the second with
  * Escape too, which closes what has no Cancel (the Go to Folder sheet).
- * Returns what is still open, as an error, or null. A MIDI Import Options
- * window can't be seen, so it is never cancelled here.
+ * Returns what is still open, as an error, or null. A dialog-shaped MIDI
+ * Import Options window is cancelled here like any dialog (`dismiss`
+ * presses its Cancel); an opaque one can't be seen, so it never is.
  */
 async function failsafe(deps: ExportDeps, t: ExportTimeouts): Promise<string | null> {
 	try {

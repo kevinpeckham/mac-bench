@@ -302,8 +302,13 @@ one more non-dialog window, an opaque one, is the import window, accepted
 with Return as before. Preflight refuses a leftover dialog-shaped one like
 any dialog; the failsafe's `dismiss` cancels the job's own (its Cancel).
 The fakes model both (`importShape`; by default opaque while a project
-window is open, which `connect` now opens for each project). Rule, again:
-a fake's shape stands for one real dump in one state; look at the others.
+window is open, which `connect` now opens for each project). The live
+dump listed only 8 of the dialog's 23 children, so the rest of the fake's
+dialog (the file name, the tracks table, Cancel and OK) is a guess: the
+result's `importWindow.raw` (and `<base>.midi-import.json`) carries the
+window's whole `dump --dialogs --depth 12` tree, and the first live run's
+is what the fake gets checked against. Rule, again: a fake's shape stands
+for one real dump in one state; look at the others.
 
 ### A failed Return was treated as one that may have gone (review, 2026-11-08)
 
@@ -327,9 +332,10 @@ import window up, with nothing able to close it. Cause: MacBenchAX can't be
 launched from SSH (no GUI session; `launchctl asuser` needs root), so only
 the helper, a launchd agent in the GUI session, can answer Dorico's
 windows. Fix: always go through the helper (CLAUDE.md rule); its MIDI job
-cancels the window whatever happens. (Correction: it can't, as the entry
-above found; a job that fails at the import says to Cancel the window on
-the Mac.)
+cancels the window whatever happens. (Correction: that holds only for the
+dialog-shaped window, which the failsafe's `dismiss` cancels; an opaque
+one can't be seen, and a job that fails with one open says to Cancel it on
+the Mac. See the entries above.)
 
 ## Process
 

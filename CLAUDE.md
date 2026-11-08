@@ -76,7 +76,10 @@ bun run helper                             # on the Mac (launchd runs this)
   one level (the tree is self-similar: exponential). The job types
   nothing but the folder path. The only OKs it presses are the Export
   MusicXML dialog's and the import window's when that is a readable
-  dialog, each when it is the one dialog open, scoped with `--dialogs`.
+  dialog, each when it is the one dialog open, scoped with `--dialogs`
+  (the import window's also aimed inside it with `--after "MIDI Import
+  Options"`). A project is recorded for closing only once the import
+  window has closed.
   It sends Return only to the Go to Folder sheet once that holds the
   path, and, only in the opaque shape, to the import window once, never
   retried, when Dorico's non-dialog window count rose by one (an opaque
