@@ -1,12 +1,17 @@
 /**
- * `mac-bench dorico [--export musicxml|mxl] <file.musicxml…> [--out <dir>]`
+ * `mac-bench dorico [--midi] [--export musicxml|mxl] <file…> [--out <dir>]`
  * and `--health`, on the VM: send MusicXML to the helper on the Mac, write
  * back the PDFs Dorico engraved, or with `--export` the MusicXML (or .mxl)
- * Dorico exported, as `<input base>.dorico.musicxml` / `.dorico.mxl`. Takes
+ * Dorico exported, as `<input base>.dorico.musicxml` / `.dorico.mxl`. With
+ * `--midi` the files are Standard MIDI Files, which Dorico imports and
+ * exports (as MusicXML unless `--export mxl`); what its MIDI Import Options
+ * window showed is written beside each as `<base>.midi-import.json`. Takes
  * its config and output as arguments (`main.ts` reads the env).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { isMidi } from "../dorico/midi.js";
+import { MAX_BYTES } from "../helper/server.js";
 
 export type DoricoIo = {
 	url: string;
@@ -19,11 +24,11 @@ export type DoricoIo = {
 };
 
 type Result =
-	| { name: string; ok: true; pdf?: string; file?: string }
-	| { name: string; ok: false; step: string; message: string };
+	| { name: string; ok: true; pdf?: string; file?: string; importWindow?: unknown }
+	| { name: string; ok: false; step: string; message: string; importWindow?: unknown };
 
 export const USAGE =
-	"usage: mac-bench dorico [--export musicxml|mxl] <file.musicxml…> [--out <dir>] | --health";
+	"usage: mac-bench dorico [--export musicxml|mxl] <file.musicxml…> [--out <dir>] | --midi [--export musicxml|mxl] <file.mid…> [--out <dir>] | --health";
 
 const FORMATS = ["musicxml", "mxl"];
 
@@ -56,7 +61,7 @@ async function call(io: DoricoIo, path: string, init: RequestInit = {}): Promise
 
 /** `<name's stem><ext>` in `dir`, numbered if a file of that name is already taken. */
 function outPath(dir: string, name: string, ext: string, taken: Set<string>): string {
-	const stem = basename(name).replace(/\.(musicxml|xml|mxl)$/i, "");
+	const stem = basename(name).replace(/\.(musicxml|xml|mxl|midi?)$/i, "");
 	let path = join(dir, `${stem}${ext}`);
 	for (let n = 2; taken.has(path); n++) path = join(dir, `${stem}-${n}${ext}`);
 	taken.add(path);
@@ -76,6 +81,7 @@ function parse(args: string[]) {
 		out: values.get("--out"),
 		format: values.get("--export"),
 		hasFormat: values.has("--export"),
+		midi: args.includes("--midi"),
 		files,
 	};
 }
@@ -88,7 +94,8 @@ export async function dorico(args: string[], io: DoricoIo): Promise<number> {
 		io.out(JSON.stringify(await res.json(), null, 2));
 		return 0;
 	}
-	const { out, format, hasFormat, files } = parse(args);
+	const { out, format: given, hasFormat, midi, files } = parse(args);
+	const format = given ?? (midi ? "musicxml" : undefined);
 	const outDir = resolve(cwd, out ?? join("dorico-runs", stamp()));
 	if (files.length === 0 || (hasFormat && !FORMATS.includes(format ?? ""))) {
 		io.err(USAGE);
@@ -99,9 +106,26 @@ export async function dorico(args: string[], io: DoricoIo): Promise<number> {
 		io.err(`no such file: ${missing.join(", ")}`);
 		return 1;
 	}
+	const bytes = files.map((f) => new Uint8Array(readFileSync(resolve(cwd, f))));
+	if (midi) {
+		const notMidi = files.filter((_, i) => !isMidi(bytes[i] ?? new Uint8Array()));
+		if (notMidi.length) {
+			io.err(
+				`not a Standard MIDI File (no MThd header): ${notMidi.map((f) => basename(f)).join(", ")}`,
+			);
+			return 1;
+		}
+	}
+	const size = bytes.reduce((n, b) => n + b.length, 0);
+	if (size > MAX_BYTES) {
+		io.err(`the files come to ${size} bytes, larger than the helper takes (${MAX_BYTES})`);
+		return 1;
+	}
 	const form = new FormData();
-	for (const f of files)
-		form.append("file", new File([readFileSync(resolve(cwd, f))], basename(f)));
+	files.forEach((f, i) => {
+		form.append("file", new File([bytes[i] ?? new Uint8Array()], basename(f)));
+	});
+	if (midi) form.append("import", "midi");
 	if (format) form.append("export", format);
 	const ext = format ? `.dorico.${format}` : ".pdf";
 	const res = await call(io, "/jobs", { method: "POST", body: form });
@@ -110,13 +134,16 @@ export async function dorico(args: string[], io: DoricoIo): Promise<number> {
 	mkdirSync(outDir, { recursive: true });
 	const taken = new Set<string>();
 	for (const r of results) {
-		if (!r.ok) {
-			io.out(`FAIL ${r.name}: ${r.step}: ${r.message}`);
-			continue;
-		}
 		const path = outPath(outDir, r.name, ext, taken);
-		writeFileSync(path, Buffer.from((format ? r.file : r.pdf) ?? "", "base64"));
-		io.out(`ok ${path}`);
+		if (r.ok) {
+			writeFileSync(path, Buffer.from((format ? r.file : r.pdf) ?? "", "base64"));
+			io.out(`ok ${path}`);
+		} else io.out(`FAIL ${r.name}: ${r.step}: ${r.message}`);
+		if (r.importWindow !== undefined) {
+			const json = `${path.slice(0, -ext.length)}.midi-import.json`;
+			writeFileSync(json, `${JSON.stringify(r.importWindow, null, 2)}\n`);
+			io.out(`import ${json}`);
+		}
 	}
 	return results.every((r) => r.ok) ? 0 : 1;
 }

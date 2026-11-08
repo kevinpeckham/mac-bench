@@ -7,6 +7,10 @@
  * `hasScore` only when it changes, `Window.SwitchToLayout` is accepted but
  * switches nothing, and after a close no window is active, so commands that
  * need a project in front are refused (`kCommandNotAllowed`).
+ *
+ * A `.mid` opens as Dorico Elements 6.2.31 did live (2026-11-08): `kOK`, no
+ * project, and the MIDI Import Options window (`onMidiImport`, wired to a
+ * FakeAx); the project is made only when that window's OK is pressed.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -36,6 +40,11 @@ export class FakeDorico {
 	replyDelayMs = 0;
 	/** Called right after an import adds its project (and its status is pushed). */
 	onOpened: ((id: number) => void) | null = null;
+	/**
+	 * Called when a `.mid` is opened, in place of making a project: `accept`
+	 * makes it (the import window's OK). Unset, the file just sits there.
+	 */
+	onMidiImport: ((file: string, accept: () => void) => void) | null = null;
 	/** Every message sent to a client, in order. */
 	readonly sent: Record<string, unknown>[] = [];
 	private nextId = 35;
@@ -207,10 +216,15 @@ export class FakeDorico {
 			case "File.Open": {
 				ok();
 				const file = params.get("File") ?? "";
-				setTimeout(() => {
+				const make = () => {
 					const id = this.add(file);
 					this.push(this.activeFields());
 					this.onOpened?.(id);
+				};
+				setTimeout(() => {
+					if (/\.midi?$/i.test(file))
+						this.onMidiImport?.(file, () => setTimeout(make, this.opts.openDelayMs));
+					else make();
 				}, this.opts.openDelayMs);
 				return;
 			}

@@ -11,13 +11,23 @@
  * and closes any open menu, and the project is closed unsaved, by its ID,
  * while it is in front. The only text ever typed is the folder path; the
  * only OK pressed is the Export MusicXML dialog's, and Return is sent only
- * to the Go to Folder sheet once it holds that path.
+ * to the Go to Folder sheet once it holds that path. Dorico's MIDI Import
+ * Options window, a standard window, counts as a dialog wherever one is
+ * checked for (`blocking`), and the failsafe cancels it too. The MIDI job
+ * (`midi.ts`) shares the export path (`exportProject`) and the wrap-up.
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { type AxClient, type AxNode, isDialog } from "../ax/client.js";
 import type { DoricoClient } from "./client.js";
+import {
+	axCommand as ax,
+	flat,
+	importWindows,
+	isImportWindow,
+	pressInImport,
+} from "./import-window.js";
 import type { JobFile, Timeouts } from "./job.js";
 import {
 	as,
@@ -89,14 +99,6 @@ export const NOT_TRUSTED =
 	`on the Mac run ${REQUEST_COMMAND}, then switch MacBenchAX on in System Settings > ` +
 	"Privacy & Security > Device Control and Data Access > Accessibility (README)";
 
-/** Run a MacBenchAX command; an `error` in its answer, or `ok: false`, throws. */
-async function ax(client: AxClient, ...args: string[]): Promise<Record<string, unknown>> {
-	const r = await client.run(args);
-	if (typeof r.error === "string") throw new Error(`MacBenchAX ${args[0]}: ${r.error}`);
-	if (r.ok === false) throw new Error(`MacBenchAX ${args.join(" ")} didn't take`);
-	return r;
-}
-
 /** Dorico's dialogs (and other windows' sheets): never its document windows' trees. */
 type Seen = { windows: AxNode[]; menuOpen: string | null };
 
@@ -110,7 +112,15 @@ async function look(client: AxClient, depth = 12): Promise<Seen> {
 	};
 }
 
-/** Press in Dorico's dialogs only. */
+/**
+ * What would block a job: the dialogs, sheets and an open menu (`look`, one
+ * level down), and the MIDI Import Options window, which isn't a dialog.
+ */
+export async function blocking(client: AxClient): Promise<Seen> {
+	const s = await look(client, 1);
+	return { ...s, windows: [...s.windows, ...(await importWindows(client))] };
+}
+
 /**
  * Press an element of Dorico's dialogs. Dorico rebuilds a dialog's
  * accessibility tree after a checkbox changes, and for a moment finds
@@ -131,19 +141,12 @@ async function press(client: AxClient, t: ExportTimeouts, ...args: string[]) {
 	}
 }
 
-/** `n` and everything under it, in the order the dump lists them. */
-const flat = (n: AxNode, acc: AxNode[] = []): AxNode[] => {
-	acc.push(n);
-	for (const c of n.children ?? []) flat(c, acc);
-	return acc;
-};
-
 const dialog = (ws: AxNode[], title: string) =>
 	ws.find((w) => w.AXSubrole === "AXDialog" && w.AXTitle === title);
 const titleOf = (w: AxNode) => w.AXTitle || w.AXSubrole || w.AXRole || "untitled";
 const noSlash = (p: string) => p.replace(/\/+$/, "");
 /** What is open, for a message: the dialogs, and a menu. */
-const openThings = (s: Seen) => [
+export const openThings = (s: Seen) => [
 	...s.windows.map(titleOf),
 	...(s.menuOpen !== null ? [`the ${s.menuOpen || "untitled"} menu`] : []),
 ];
@@ -180,7 +183,7 @@ const exportDialog = (client: AxClient, t: ExportTimeouts, step: Step) =>
 
 /** File > Export > MusicXML..., into a Dorico showing no dialog; once more if a menu was left open. */
 async function openExport(deps: ExportDeps, t: ExportTimeouts) {
-	const before = await look(deps.ax, 1);
+	const before = await blocking(deps.ax);
 	if (before.windows.length || before.menuOpen !== null)
 		throw new StepError(
 			"dialog",
@@ -193,7 +196,7 @@ async function openExport(deps: ExportDeps, t: ExportTimeouts) {
 			return await exportDialog(deps.ax, t, "dialog");
 		} catch (e) {
 			if (attempt > 1) throw e;
-			const now = await look(deps.ax, 1);
+			const now = await blocking(deps.ax);
 			if (now.windows.length) throw e; // something else showed: the failsafe's business
 			if (now.menuOpen !== null) {
 				await deps.activate();
@@ -347,7 +350,7 @@ function pick(out: string, ext: string): string | null {
 }
 
 async function exportTo(deps: ExportDeps, t: ExportTimeouts, id: number, out: string, ext: string) {
-	const open = (await look(deps.ax, 1)).windows;
+	const open = (await blocking(deps.ax)).windows;
 	if (open.length !== 1 || open[0]?.AXTitle !== EXPORT)
 		throw new StepError(
 			"export",
@@ -368,25 +371,28 @@ async function pressEscape(deps: ExportDeps, t: ExportTimeouts) {
 }
 
 /**
- * Cancel every dialog Dorico has open and close an open menu: up to four
- * rounds of `dismiss` (Escape first for a menu), from the second with Escape
- * too, which closes what has no Cancel (the Go to Folder sheet). Returns
- * what is still open, as an error, or null.
+ * Cancel every dialog Dorico has open (the MIDI Import Options window
+ * included) and close an open menu: up to four rounds of `dismiss` (Escape
+ * first for a menu) and the import window's Cancel, from the second with
+ * Escape too, which closes what has no Cancel (the Go to Folder sheet).
+ * Returns what is still open, as an error, or null.
  */
 async function failsafe(deps: ExportDeps, t: ExportTimeouts): Promise<string | null> {
 	try {
 		for (let round = 0; round < 4; round++) {
-			const now = await look(deps.ax, 1);
+			const now = await blocking(deps.ax);
 			if (now.menuOpen !== null) await pressEscape(deps, t);
 			if (now.windows.length === 0) {
 				if (now.menuOpen === null) return null;
 				continue;
 			}
-			await ax(deps.ax, "dismiss").catch(() => {});
+			if (now.windows.some((w) => !isImportWindow(w))) await ax(deps.ax, "dismiss").catch(() => {});
+			// `dismiss` sees dialogs only: the import window's Cancel is pressed on its own.
+			if (now.windows.some(isImportWindow)) await pressInImport(deps.ax, "Cancel").catch(() => {});
 			await Bun.sleep(t.settleMs);
-			if (round > 0 && (await look(deps.ax, 1)).windows.length > 0) await pressEscape(deps, t);
+			if (round > 0 && (await blocking(deps.ax)).windows.length > 0) await pressEscape(deps, t);
 		}
-		const left = await look(deps.ax, 1);
+		const left = await blocking(deps.ax);
 		const things = openThings(left);
 		return things.length
 			? `a Dorico dialog is still open: ${things.join(", ")}; dismiss it by screen sharing`
@@ -402,8 +408,8 @@ const fail = (r: ExportResult, step: Step, message: string): ExportResult =>
 		? { name: r.name, ok: false, step, message }
 		: { ...r, message: r.message.includes(message) ? r.message : `${r.message}; ${message}` };
 
-/** Before anything: MacBenchAX trusted, and Dorico showing no dialog or menu. */
-async function preflight(deps: ExportDeps): Promise<{ step: Step; message: string } | null> {
+/** Before anything: MacBenchAX trusted, and Dorico showing no dialog, import window or menu. */
+export async function preflight(deps: ExportDeps): Promise<{ step: Step; message: string } | null> {
 	try {
 		if ((await deps.ax.run(["trusted"])).trusted !== true)
 			return { step: "ax", message: NOT_TRUSTED };
@@ -411,7 +417,7 @@ async function preflight(deps: ExportDeps): Promise<{ step: Step; message: strin
 		return { step: "ax", message: (e as Error).message };
 	}
 	try {
-		const now = await look(deps.ax, 1);
+		const now = await blocking(deps.ax);
 		const things = openThings(now);
 		// Not cancelled: it may be someone's. A job's own is cancelled by its failsafe.
 		if (things.length)
@@ -443,30 +449,67 @@ export async function exportFile(
 		};
 	const stop = await preflight(deps);
 	if (stop) return { name, ok: false, ...stop };
+	const job = jobFolder(workDir, safeName(name), file.xml);
+	let id: number | null = null;
+	let result: ExportResult;
+	try {
+		const project = await as("open", () => open(deps.dorico, job.input, t.openMs));
+		id = project;
+		result = { name, ...(await exportProject(deps, t, project, job.out, format)) };
+	} catch (e) {
+		result = failed(name, e);
+	}
+	return wrapUp(deps, t, result, id, job.dir);
+}
+
+/** A fresh job folder: `in/<file>` holding `data`, and `out-<job>/` for the export. */
+export function jobFolder(workDir: string, file: string, data: string | Uint8Array) {
 	const dir = jobDir(workDir);
 	// A leaf unique to the job: "Where:" naming it can't be an earlier job's folder.
 	const out = join(dir, `out-${basename(dir)}`);
 	mkdirSync(join(dir, "in"));
 	mkdirSync(out);
-	const path = join(dir, "in", safeName(name));
-	writeFileSync(path, file.xml);
+	const input = join(dir, "in", file);
+	writeFileSync(input, data);
+	return { dir, out, input };
+}
+
+/** A failure as a result, naming its step. */
+export const failed = (name: string, e: unknown): ExportResult => {
+	const err = e instanceof StepError ? e : new StepError("open", String(e));
+	return { name, ok: false, step: err.step, message: err.message };
+};
+
+/** The project in front exported through Dorico's Export MusicXML dialog into `out`. */
+export async function exportProject(
+	deps: ExportDeps,
+	t: ExportTimeouts,
+	project: number,
+	out: string,
+	format: ExportFormat,
+): Promise<{ ok: true; file: Uint8Array; exported: string }> {
 	const ext = format === "mxl" ? ".mxl" : ".musicxml";
-	let id: number | null = null;
-	let result: ExportResult;
-	try {
-		const project = await as("open", () => open(deps.dorico, path, t.openMs));
-		id = project;
-		await as("focus", () => focus(deps.dorico, project));
-		await as("dialog", () => openExport(deps, t));
-		await as("options", () => options(deps.ax, t, format));
-		await as("folder", () => folder(deps, t, out));
-		const got = await as("export", () => exportTo(deps, t, project, out, ext));
-		result = { name, ok: true, file: got.bytes, exported: basename(got.path) };
-	} catch (e) {
-		const err = e instanceof StepError ? e : new StepError("open", String(e));
-		result = { name, ok: false, step: err.step, message: err.message };
-	}
-	// Whatever happened: the failsafe, then the close.
+	await as("focus", () => focus(deps.dorico, project));
+	await as("dialog", () => openExport(deps, t));
+	await as("options", () => options(deps.ax, t, format));
+	await as("folder", () => folder(deps, t, out));
+	const got = await as("export", () => exportTo(deps, t, project, out, ext));
+	return { ok: true, file: got.bytes, exported: basename(got.path) };
+}
+
+/**
+ * Whatever happened: the failsafe, then the job's project (`id`, if one was
+ * made) closed unsaved, unless a dialog stayed open; the job folder goes
+ * after a success and is kept after a failure.
+ */
+export async function wrapUp(
+	deps: ExportDeps,
+	t: ExportTimeouts,
+	before: ExportResult,
+	id: number | null,
+	dir: string,
+): Promise<ExportResult> {
+	let result = before;
 	const left = await failsafe(deps, t);
 	if (left) result = fail(result, "failsafe", left);
 	if (id !== null) {

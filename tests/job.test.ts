@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DoricoClient } from "../src/dorico/client.js";
-import { JobQueue, pruneJobs, runFile, type Timeouts } from "../src/dorico/job.js";
+import { type JobFile, JobQueue, pruneJobs, runFile, type Timeouts } from "../src/dorico/job.js";
 import { FakeDorico, type FakeOptions } from "./fake-dorico.js";
 
 const cleanup: (() => void)[] = [];
@@ -172,7 +172,7 @@ describe("runFile", () => {
 describe("JobQueue", () => {
 	test("runs jobs one at a time", async () => {
 		const { fake, client, work } = await setup();
-		const queue = new JobQueue((files) =>
+		const queue = new JobQueue((files: JobFile[]) =>
 			Promise.all(files.map((f) => runFile(client, f, work, FAST))),
 		);
 		const [a, b] = await Promise.all([
@@ -188,7 +188,7 @@ describe("JobQueue", () => {
 
 	test("a job's files run one after another too", async () => {
 		const { fake, client, work } = await setup();
-		const queue = new JobQueue(async (files) => {
+		const queue = new JobQueue(async (files: JobFile[]) => {
 			const out = [];
 			for (const f of files) out.push(await runFile(client, f, work, FAST));
 			return out;
