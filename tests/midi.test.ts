@@ -121,6 +121,8 @@ describe("importMidi", () => {
 					notes: 583,
 				},
 			],
+			// one deep dump: read and the landing check share it
+			dumps: [{ depth: 14, ms: expect.any(Number) }],
 		});
 		// the .mid went to Dorico as it was
 		const opened = fake.commandsReceived.find((c) => c.startsWith("File.Open"));
@@ -273,6 +275,116 @@ describe("importMidi", () => {
 		};
 		await importMidi(deps, { name: "../odd name.mid", midi: MIDI }, "musicxml", work, FAST);
 		expect(written).toEqual(MIDI);
+	});
+});
+
+describe("importMidi, once OK is pressed", () => {
+	/** `ax.run`, failing as MacBenchAX does when it gives no answer, for the commands `fails` picks. */
+	const failing = (
+		ax: FakeAx,
+		fails: (args: string[], okPressed: boolean) => boolean,
+		after = true,
+	) => {
+		const run = ax.run.bind(ax);
+		let okPressed = false;
+		let failed = false;
+		ax.run = async (args, options) => {
+			const fail = !failed && fails(args, okPressed);
+			if (fail && !after) {
+				failed = true;
+				throw new Error(`MacBenchAX gave no answer to ${args[0]} within 10000 ms`);
+			}
+			const r = await run(args, options);
+			if (args[0] === "press" && args.includes("OK") && !args.includes("--dialogs"))
+				okPressed = true;
+			if (fail) {
+				failed = true;
+				throw new Error(`MacBenchAX gave no answer to ${args[0]} within 10000 ms`);
+			}
+			return r;
+		};
+	};
+
+	test("a dump that times out after OK: the project Dorico made is still closed", async () => {
+		const { fake, ax, deps, work } = await setup();
+		failing(ax, (a, okPressed) => okPressed && a[0] === "dump", false);
+		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: false, step: "import" });
+		expect(closes(fake)).toHaveLength(1);
+		expect(fake.projects.size).toBe(0);
+	});
+
+	test("a press whose answer comes too late: the project Dorico made is still closed", async () => {
+		const { fake, ax, deps, work } = await setup();
+		failing(ax, (a) => a[0] === "press" && a.includes("OK") && !a.includes("--dialogs"));
+		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: false, step: "import" });
+		expect(closes(fake)).toHaveLength(1);
+		expect(fake.projects.size).toBe(0);
+	});
+
+	test("no project after OK: an open error saying to close it if it opens later", async () => {
+		const { fake, ax, deps, work } = await setup();
+		fake.onMidiImport = (file) => ax.showImport(basename(file), () => {});
+		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: false, step: "open" });
+		if (!r.ok) expect(r.message).toContain("close it without saving");
+	});
+
+	test("a project opened while the import window waits is never taken for the import", async () => {
+		const { fake, ax, deps, work } = await setup();
+		const mine = join(work, "..", "mine.musicxml");
+		writeFileSync(mine, SCORE);
+		let kevin = -1;
+		fake.onMidiImport = (file, accept) => {
+			ax.showImport(basename(file), accept);
+			kevin = fake.openDirect(mine);
+			fake.focus(kevin);
+		};
+		// Dorico pushes a status from Kevin's project as OK is pressed (a click in it, say).
+		ax.onRun = (a) => {
+			if (a[0] === "press" && a.includes("OK") && !a.includes("--dialogs")) fake.focus(kevin);
+		};
+		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
+		expect(r.ok).toBe(true);
+		expect(fake.projects.has(kevin)).toBe(true);
+		expect(closes(fake).some((c) => c.includes(`OpenScoreID=${kevin}&`))).toBe(false);
+	});
+});
+
+describe("the press into the import window", () => {
+	test("a document's text valued like the window's title, before its decoys: refused", async () => {
+		const { fake, ax, deps, work } = await setup({ docMarker: true, importBehind: true });
+		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: false, step: "import" });
+		if (!r.ok) expect(r.message).toContain("won't press OK");
+		expect(ax.decoysPressed).toEqual([]);
+		expect(ax.importFile).toBeNull(); // Escape closed it
+		expect(fake.projects.size).toBe(0);
+	});
+
+	test("a level as long as the dump lists (200) before the landing: refused, it may hide more", async () => {
+		const { ax, deps, work } = await setup({ docWide: true, importBehind: true });
+		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
+		expect(r).toMatchObject({ ok: false, step: "import" });
+		if (!r.ok) expect(r.message).toContain("won't press OK");
+		expect(ax.decoysPressed).toEqual([]);
+	});
+
+	test("deep dumps get a longer answer time, and each is timed in the record", async () => {
+		const { ax, deps, work } = await setup();
+		const r = await importMidi(deps, { name: "a.mid", midi: MIDI }, "musicxml", work, FAST);
+		expect(r.ok).toBe(true);
+		const deep = ax.log.flatMap((a, i) =>
+			a[0] === "dump" && a[a.indexOf("--depth") + 1] === "14" ? [ax.runOptions[i]] : [],
+		);
+		expect(deep.length).toBeGreaterThan(0);
+		for (const o of deep) expect(o?.timeoutMs).toBeGreaterThanOrEqual(30_000);
+		expect(r.importWindow?.dumps?.length).toBe(deep.length);
+		for (const d of r.importWindow?.dumps ?? []) {
+			expect(d.depth).toBe(14);
+			expect(typeof d.ms).toBe("number");
+		}
 	});
 });
 

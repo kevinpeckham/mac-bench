@@ -54,6 +54,15 @@ describe("macBenchAx", () => {
 		);
 	});
 
+	test("a command may be given longer for its answer", async () => {
+		const ax = macBenchAx("/A.app", work(), { spawn: async () => 0, timeoutMs: 20, pollMs: 10 });
+		const started = Date.now();
+		await expect(ax.run(["dump", "--depth", "14"], { timeoutMs: 150 })).rejects.toThrow(
+			/within 150 ms/,
+		);
+		expect(Date.now() - started).toBeGreaterThanOrEqual(140);
+	});
+
 	test("open failing is an error", async () => {
 		const ax = macBenchAx("/A.app", work(), { spawn: async () => 1, timeoutMs: 100 });
 		await expect(ax.run(["trusted"])).rejects.toThrow(/couldn't launch/);

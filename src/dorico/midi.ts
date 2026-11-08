@@ -27,15 +27,19 @@ import {
 	wrapUp,
 } from "./export.js";
 import {
-	axCommand,
+	DEEP_DUMP_MS,
+	type DumpTiming,
+	deepDump,
 	IMPORT_WINDOW,
 	type ImportWindow,
 	importWindows,
 	isImportWindow,
-	pressInImport,
+	pressImportButton,
 	readImportWindow,
 	windowSummary,
+	wontLand,
 } from "./import-window.js";
+import type { Status } from "./protocol.js";
 import { as, StepError, safeName } from "./steps.js";
 
 export type { ImportTrack, ImportWindow } from "./import-window.js";
@@ -48,19 +52,14 @@ export type MidiResult = ExportResult & { importWindow?: ImportWindow };
 export const isMidi = (b: Uint8Array) =>
 	b.length >= 14 && b[0] === 0x4d && b[1] === 0x54 && b[2] === 0x68 && b[3] === 0x64;
 
-/** How deep the import window is read (as deep as a press looks). */
-const READ_DEPTH = 14;
-
-/** Ask Dorico to open `path`; the highest project ID seen before, for spotting the new one. */
-async function openMidi(dorico: DoricoClient, path: string): Promise<number> {
+/** Ask Dorico to open `path`. */
+async function openMidi(dorico: DoricoClient, path: string): Promise<void> {
 	await dorico.status();
-	const floor = dorico.highestScoreID;
 	await dorico.command(`File.Open?File=${path}`);
-	return floor;
 }
 
-/** Wait for the import window, then read it. */
-async function waitForImport(deps: ExportDeps, t: ExportTimeouts): Promise<ImportWindow> {
+/** Wait for the import window. */
+async function waitForImport(deps: ExportDeps, t: ExportTimeouts): Promise<void> {
 	const end = Date.now() + t.openMs;
 	while ((await importWindows(deps.ax)).length === 0) {
 		if (Date.now() >= end)
@@ -70,18 +69,55 @@ async function waitForImport(deps: ExportDeps, t: ExportTimeouts): Promise<Impor
 			);
 		await Bun.sleep(t.pollMs);
 	}
-	const r = await axCommand(deps.ax, "dump", "--depth", String(READ_DEPTH));
-	const found = (Array.isArray(r.windows) ? (r.windows as AxNode[]) : []).filter(isImportWindow);
+}
+
+/** What the job saw of the import, and the project it made, once known: `wrapUp` closes it. */
+type Import = { window?: ImportWindow; dumps: DumpTiming[]; project: number | null };
+
+/**
+ * One deep dump: the import window read into `seen`, and where OK would
+ * land checked (the same dump: they are slow with a large project open).
+ */
+async function readWindow(deps: ExportDeps, seen: Import): Promise<void> {
+	const ws = await deepDump(deps.ax, seen.dumps);
+	const found = ws.filter(isImportWindow);
 	if (found.length !== 1)
 		throw new StepError("import", `${found.length} ${IMPORT_WINDOW} windows open, not one`);
-	return readImportWindow(found[0] as AxNode);
+	seen.window = readImportWindow(found[0] as AxNode);
+	const refused = wontLand(ws, "OK");
+	if (refused) throw new StepError("import", refused);
 }
+
+/** The import window gone, within `dialogMs`; true, or false if it is still open. */
+async function windowGone(deps: ExportDeps, t: ExportTimeouts): Promise<boolean> {
+	const end = Date.now() + t.dialogMs;
+	while ((await importWindows(deps.ax)).length > 0) {
+		if (Date.now() >= end) return false;
+		await Bun.sleep(t.pollMs);
+	}
+	return true;
+}
+
+/** `made`'s project, if it comes within `ms`; null otherwise. */
+const within = (made: Promise<Status>, ms: number): Promise<number | null> =>
+	Promise.race([
+		made.then(
+			(s) => s.activeOpenScoreID as number,
+			() => null,
+		),
+		Bun.sleep(ms).then(() => null),
+	]);
+
+const LATER = "if Dorico makes a project from it later, close it without saving";
 
 /**
  * OK in the import window, when it is the one thing open, then the project
- * Dorico makes from it: the first newer than `floor`.
+ * Dorico makes from it: the first newer than any seen just before OK (so a
+ * project opened meanwhile is never taken for it). Once OK is sent, any
+ * failure still waits for that project and records it in `seen.project`,
+ * for `wrapUp` to close; if none comes, the error says to close it.
  */
-async function accept(deps: ExportDeps, t: ExportTimeouts, floor: number): Promise<number> {
+async function accept(deps: ExportDeps, t: ExportTimeouts, seen: Import): Promise<number> {
 	const open = await blocking(deps.ax);
 	const only = open.windows[0];
 	if (open.windows.length !== 1 || !only || !isImportWindow(only) || open.menuOpen !== null)
@@ -89,28 +125,37 @@ async function accept(deps: ExportDeps, t: ExportTimeouts, floor: number): Promi
 			"import",
 			`won't press OK with these open: ${openThings(open).join(", ") || "nothing"}`,
 		);
+	await readWindow(deps, seen);
+	await deps.dorico.status();
+	const floor = deps.dorico.highestScoreID;
 	const made = deps.dorico.waitForStatus(
 		(s) => typeof s.activeOpenScoreID === "number" && s.activeOpenScoreID > floor,
-		t.openMs,
+		t.dialogMs + 2 * t.openMs + DEEP_DUMP_MS,
 	);
-	made.catch(() => {}); // the press may fail first
-	await pressInImport(deps.ax, "OK");
-	const end = Date.now() + t.dialogMs;
-	while ((await importWindows(deps.ax)).length > 0) {
-		if (Date.now() >= end)
+	made.catch(() => {});
+	let stillOpen = false;
+	try {
+		await pressImportButton(deps.ax, "OK");
+		stillOpen = !(await windowGone(deps, t));
+		if (stillOpen)
 			throw new StepError(
 				"import",
 				`OK didn't take: Dorico's ${IMPORT_WINDOW} window is still open after ${t.dialogMs} ms; windows seen: ${await windowSummary(deps.ax)}`,
 			);
-		await Bun.sleep(t.pollMs);
+	} catch (e) {
+		// OK may have taken all the same (an answer that came too late, a dump Dorico was too busy for).
+		seen.project = await within(made, stillOpen ? 0 : t.openMs);
+		const err = e instanceof StepError ? e : new StepError("import", (e as Error).message);
+		if (seen.project === null && !stillOpen) err.message = `${err.message}; ${LATER}`;
+		throw err;
 	}
-	const s = await made.catch(() => {
+	seen.project = await within(made, t.openMs);
+	if (seen.project === null)
 		throw new StepError(
 			"open",
-			`Dorico made no project from the MIDI file within ${t.openMs} ms of OK; if one opens later, close it without saving`,
+			`Dorico made no project from the MIDI file within ${t.openMs} ms of OK; ${LATER}`,
 		);
-	});
-	return s.activeOpenScoreID as number;
+	return seen.project;
 }
 
 /** One MIDI file through Dorico's import and MusicXML export. Never throws. */
@@ -132,18 +177,16 @@ export async function importMidi(
 	const stop = await preflight(deps);
 	if (stop) return { name, ok: false, ...stop };
 	const job = jobFolder(workDir, safeName(name, ".mid"), file.midi);
-	let id: number | null = null;
-	let importWindow: ImportWindow | undefined;
+	const seen: Import = { dumps: [], project: null };
 	let result: ExportResult;
 	try {
-		const floor = await as("open", () => openMidi(deps.dorico, job.input));
-		importWindow = await as("import", () => waitForImport(deps, t));
-		const project = await as("import", () => accept(deps, t, floor));
-		id = project;
+		await as("open", () => openMidi(deps.dorico, job.input));
+		await as("import", () => waitForImport(deps, t));
+		const project = await as("import", () => accept(deps, t, seen));
 		result = { name, ...(await exportProject(deps, t, project, job.out, format)) };
 	} catch (e) {
 		result = failed(name, e);
 	}
-	const done = await wrapUp(deps, t, result, id, job.dir);
-	return importWindow ? { ...done, importWindow } : done;
+	const done = await wrapUp(deps, t, result, seen.project, job.dir);
+	return seen.window ? { ...done, importWindow: { ...seen.window, dumps: seen.dumps } } : done;
 }

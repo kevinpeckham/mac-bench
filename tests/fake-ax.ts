@@ -113,6 +113,10 @@ export type FakeAxOptions = {
 	importBehind?: boolean;
 	/** The import window's buttons sit deeper than a press looks (15 levels). */
 	importButtonsDeep?: boolean;
+	/** The document window holds, before its decoys, a text whose AXValue is the import window's title. */
+	docMarker?: boolean;
+	/** The document window holds a group of 200 children (as many as MacBenchAX's dump lists). */
+	docWide?: boolean;
 };
 
 const DEFAULTS: Record<string, 0 | 1> = {
@@ -183,6 +187,8 @@ export class FakeAx implements AxClient {
 			importStuck: false,
 			importBehind: false,
 			importButtonsDeep: false,
+			docMarker: false,
+			docWide: false,
 			...opts,
 			stuck: opts.stuck ?? null,
 		};
@@ -227,8 +233,12 @@ export class FakeAx implements AxClient {
 		if (accepted) accept?.();
 	}
 
-	async run(args: string[]): Promise<Record<string, unknown>> {
+	/** The options each command was run with, by index in `log`. */
+	readonly runOptions: ({ timeoutMs?: number } | undefined)[] = [];
+
+	async run(args: string[], options?: { timeoutMs?: number }): Promise<Record<string, unknown>> {
 		this.log.push(args);
+		this.runOptions.push(options);
 		this.onRun?.(args);
 		const arg = (name: string) => {
 			const i = args.indexOf(name);
@@ -413,6 +423,15 @@ export class FakeAx implements AxClient {
 			AXSubrole: "AXStandardWindow",
 			AXTitle: `${this.o.title} - Full score`,
 			children: [
+				...(this.o.docMarker ? [{ AXRole: "AXStaticText", AXValue: IMPORT }] : []),
+				...(this.o.docWide
+					? [
+							{
+								AXRole: "AXGroup",
+								children: Array.from({ length: 200 }, () => ({ AXRole: "AXStaticText" })),
+							},
+						]
+					: []),
 				{
 					AXRole: "AXGroup",
 					children: [
