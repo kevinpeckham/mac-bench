@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { dorico } from "../src/cli/dorico.js";
 import { DoricoClient } from "../src/dorico/client.js";
 import { JobQueue, runFiles } from "../src/dorico/job.js";
 import { MAX_BYTES, startServer } from "../src/helper/server.js";
-import { DORICO, FakeAx } from "./fake-ax.js";
+import { connect, DORICO, FakeAx } from "./fake-ax.js";
 import { FakeDorico } from "./fake-dorico.js";
 
 const TOKEN = "cli-token";
@@ -40,7 +40,7 @@ async function helper() {
 		},
 	};
 	const slow = { ...fast, dialogMs: 300, settleMs: 1, pollMs: 5 };
-	fake.onMidiImport = (file, accept) => ax.showImport(basename(file), accept);
+	connect(fake, ax);
 	const queue = new JobQueue((files, format) =>
 		runFiles(files, format, deps, join(dir, "work"), { pdf: fast, export: slow }),
 	);
@@ -169,26 +169,18 @@ describe("mac-bench dorico", () => {
 		expect(JSON.parse(r.out.join("\n")).ax).toEqual({ trusted: true });
 	});
 
-	test("--midi writes <base>.dorico.musicxml and the import window as <base>.midi-import.json", async () => {
+	test("--midi writes <base>.dorico.musicxml, and nothing else", async () => {
 		const { url, dir } = await helper();
 		const out = join(dir, "out");
 		const mid = join(dir, "peaceful-dreams.mid");
 		writeFileSync(mid, MIDI);
 		const r = await run(["--midi", mid, "--out", out], url);
 		expect(r.code).toBe(0);
-		expect(r.out).toEqual([
-			`ok ${join(out, "peaceful-dreams.dorico.musicxml")}`,
-			`import ${join(out, "peaceful-dreams.midi-import.json")}`,
-		]);
+		expect(r.out).toEqual([`ok ${join(out, "peaceful-dreams.dorico.musicxml")}`]);
 		expect(readFileSync(join(out, "peaceful-dreams.dorico.musicxml"), "utf8")).toStartWith(
 			"fake .musicxml",
 		);
-		const window = JSON.parse(readFileSync(join(out, "peaceful-dreams.midi-import.json"), "utf8"));
-		expect(window).toMatchObject({
-			file: "peaceful-dreams.mid",
-			useTrackMemory: true,
-			tracks: [{ name: "Chart", instrument: "Treble staff", destination: "Treble staff 1" }],
-		});
+		expect(readdirSync(out)).toEqual(["peaceful-dreams.dorico.musicxml"]);
 	});
 
 	test("--midi --export mxl writes <base>.dorico.mxl", async () => {

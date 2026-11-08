@@ -219,6 +219,57 @@ shows the press lands in that window (`pressInImport`,
 `src/dorico/import-window.ts`). The MIDI job accepts it with OK and waits
 for the project (`src/dorico/midi.ts`); the failsafe cancels it.
 
+Correction (the same day): the window could not in fact be found by title
+or pressed with `--after`; that fix was built against fakes, never against
+a real dump. See "Dorico's standard windows describe themselves as the
+application" below for what the live run showed and what replaced it.
+
+### Dorico's standard windows describe themselves as the application
+
+Symptom: the first live MIDI job failed with "Dorico's MIDI Import Options
+window didn't show within 30000 ms; windows seen: AXApplication "Dorico"
+[AXApplication "Dorico", AXApplication "Dorico", AXMenuBar]; AXApplication
+"Dorico" [AXApplication "Dorico", AXApplication "Dorico", AXMenuBar]",
+while Kevin's screenshot showed the window open over the project window,
+titled "MIDI Import Options" (tracks Voice to Voice 1, Voice chords to
+Voice 2, Acoustic Guitar to Acoustic Guitar 1). The next job, an export,
+then timed out in `File.Open` behind it; its preflight had seen nothing.
+Cause: Dorico's Qt standard windows (project windows and the import
+window) are listed in the app's AXWindows, but each describes itself as
+the application: AXRole "AXApplication", AXTitle "Dorico", no subrole, and
+as children the app's own children again (its windows, again as
+AXApplication, then the AXMenuBar). A self-similar tree with no window
+title and no contents: the window can't be found by title, its tracks
+table can't be read, and `press --after "MIDI Import Options"` can't be
+aimed at it. A deep dump of it grows as the number of windows to the power
+of the depth: never do one. Dialogs (AXWindow/AXDialog, such as Export
+MusicXML) and sheets are described properly, which is why the export job
+works. The fakes had guessed the import window was an
+AXWindow/AXStandardWindow with readable contents; no one had compared
+that with a real dump. Fix: the MIDI job counts Dorico's non-dialog
+windows (`dump --depth 0`) just before `File.Open`; the window has shown
+when there is one more and no new project. It then sends Return once,
+never retried, after checking again that nothing else is open, the count
+is still one up and no project has appeared (Kevin, live: with the window
+freshly shown and active, one Return closed it and Dorico made the
+project; OK is its default button). A project that appears without the
+window showing first is never taken, exported or closed: a score ID can't
+prove it came from the job's file, and closing someone else's project
+unsaved loses their work; the job stops and leaves it open. The tracks
+table is no longer recorded (`src/dorico/midi.ts`,
+`src/dorico/import-window.ts`; the fakes now model standard windows as the
+real ones describe themselves). The export job's `File.Open` timeout says
+such a window may be in the way. Rule: check a fake's shape against a real
+dump before trusting it.
+
+Remaining risk, accepted: Return goes to whichever Dorico window is key,
+and Accessibility can't say which that is (checking would need a
+MacBenchAX rebuild). Right after a `.mid` opens, it has been the import
+window (Kevin's live test); in a project window with nothing selected,
+Return does nothing harmful, and the job never saves a project. A
+floating window opening or closing near `File.Open` could also give a
+false N+1; no live dump has checked this yet.
+
 ### A probe outside the helper left Dorico blocked
 
 Symptom: a `.mid` opened over Remote Control from an SSH probe left the
@@ -226,7 +277,9 @@ import window up, with nothing able to close it. Cause: MacBenchAX can't be
 launched from SSH (no GUI session; `launchctl asuser` needs root), so only
 the helper, a launchd agent in the GUI session, can answer Dorico's
 windows. Fix: always go through the helper (CLAUDE.md rule); its MIDI job
-cancels the window whatever happens.
+cancels the window whatever happens. (Correction: it can't, as the entry
+above found; a job that fails at the import says to Cancel the window on
+the Mac.)
 
 ## Process
 

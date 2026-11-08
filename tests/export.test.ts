@@ -73,13 +73,9 @@ describe("exportFile", () => {
 		// only the folder path is ever typed
 		expect(ax.log.filter((a) => a[0] === "set")).toHaveLength(1);
 		expect(ax.log.find((a) => a[0] === "set")?.at(-1)).toMatch(/\/out-[\w-]+\/$/);
-		// never into the document window, never its decoy buttons: a dump without
-		// --dialogs (looking for the MIDI Import Options window) reads titles only
-		for (const a of ax.log.filter((a) => ["press", "set"].includes(a[0] as string)))
+		// only ever into dialogs and sheets: every dump, press and set is scoped
+		for (const a of ax.log.filter((a) => ["dump", "press", "set"].includes(a[0] as string)))
 			expect(a).toContain("--dialogs");
-		for (const a of ax.log.filter((a) => a[0] === "dump" && !a.includes("--dialogs")))
-			expect(a[a.indexOf("--depth") + 1]).toBe("1");
-		expect(ax.decoysPressed).toEqual([]);
 		expect(closes(fake)).toHaveLength(1);
 		expect(fake.projects.size).toBe(0);
 		expect(jobFolders(work)).toEqual([]);
@@ -306,7 +302,7 @@ describe("exportFile", () => {
 		};
 		const r = await exportFile(deps, { name: "h.musicxml", xml: SCORE }, "musicxml", work, FAST);
 		expect(r.ok).toBe(true);
-		expect(pressedOkWith).toEqual([["Export MusicXML", "Hymn - Full score"]]);
+		expect(pressedOkWith).toEqual([["Export MusicXML", "Dorico"]]);
 		// the guard just before OK reads the windows only (depth 1)
 		const okAt = ax.log.findIndex((a) => a[0] === "press" && a.includes("OK"));
 		const guard = ax.log.slice(0, okAt).findLast((a) => a[0] === "dump");
@@ -379,7 +375,6 @@ describe("exportFile", () => {
 		expect(ax.log.some((a) => a[0] === "keys" && a.includes("escape"))).toBe(true);
 		expect([ax.sheet, ax.openPanel, ax.exportOpen]).toEqual([false, false, false]);
 		expect(closes(fake)).toHaveLength(1);
-		expect(ax.decoysPressed).toEqual([]);
 	});
 
 	test("a flow titled Full score is never toggled for the layout", async () => {

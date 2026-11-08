@@ -13,8 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import { join } from "node:path";
 
 export type AxClient = {
-	/** Run a command; `timeoutMs` overrides how long its answer may take (a deep dump of a large window). */
-	run(args: string[], options?: { timeoutMs?: number }): Promise<Record<string, unknown>>;
+	run(args: string[]): Promise<Record<string, unknown>>;
 };
 
 /** An element as MacBenchAX's `dump` describes it. */
@@ -60,7 +59,7 @@ export function macBenchAx(appPath: string, workDir: string, opts: AxOptions = {
 	if (existsSync(answers))
 		for (const f of readdirSync(answers)) rmSync(join(answers, f), { force: true });
 	return {
-		async run(args, options) {
+		async run(args) {
 			mkdirSync(answers, { recursive: true, mode: 0o700 });
 			const out = join(answers, `answer-${process.pid}-${Date.now()}-${seq++}.json`);
 			const what = args[0] ?? "(no command)";
@@ -68,8 +67,7 @@ export function macBenchAx(appPath: string, workDir: string, opts: AxOptions = {
 			const code = await run(["open", "-n", "-a", appPath, "--args", ...args, "--out", out]);
 			if (code !== 0)
 				throw new Error(`couldn't launch MacBenchAX (${appPath}): open exited ${code}`);
-			const wait = options?.timeoutMs ?? timeoutMs;
-			const end = Date.now() + wait;
+			const end = Date.now() + timeoutMs;
 			while (!existsSync(out) && Date.now() < end) await Bun.sleep(pollMs);
 			if (!existsSync(out)) {
 				// Should it come after all, don't leave it lying there.
@@ -78,9 +76,9 @@ export function macBenchAx(appPath: string, workDir: string, opts: AxOptions = {
 					rmSync(`${out}.part`, { force: true });
 				};
 				tidy();
-				setTimeout(tidy, 3 * wait).unref();
+				setTimeout(tidy, 3 * timeoutMs).unref();
 				throw new Error(
-					`MacBenchAX gave no answer to ${what} within ${wait} ms; is it built (scripts/build-ax.ts), and is its work folder inside ~/Library/Application Support/mac-bench?`,
+					`MacBenchAX gave no answer to ${what} within ${timeoutMs} ms; is it built (scripts/build-ax.ts), and is its work folder inside ~/Library/Application Support/mac-bench?`,
 				);
 			}
 			try {
