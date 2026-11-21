@@ -89,6 +89,30 @@ access", "enrollment methods" and "access management" pages):
 - A hand-enrolled Mac takes Blueprints assigned to the **user**; device
   Blueprints need Automated Device Enrollment.
 
+## Found 2026-11-21: Apple Business cannot enrol this Mac
+
+Signing the machine account in on the Mac (Device Management > Sign In
+to Work or School Account) failed: "This device is assigned to a device
+management service other than Apple Business." MacStadium keeps its
+hardware in **its own** Apple Business Manager, so Apple's built-in
+service refuses the Mac. MacStadium's documented route is a token
+exchange with an **external** MDM (send them the MDM server's public
+key; they add the Mac to that server record and it enrols by Automated
+Device Enrollment). So, for this Mac:
+
+- **The managed account stays the developer identity** (Xcode > Settings
+  > Accounts), which needs no enrolment. The iOS work is not blocked.
+  Its sign-in must stay allowed on any device, not "managed devices
+  only", while the Mac is unmanaged.
+- **Device management goes back to an external MDM** (SimpleMDM, as first
+  researched), for the screen-recording setting and for Logic Pro
+  assigned to the device. Either hand enrolment by SimpleMDM's link, or
+  MacStadium's token exchange (supervised, and no Apple ID needed for
+  Logic). To ask MacStadium: whether they will assign this Mac to our
+  MDM server, or release or unassign it in their Apple Business Manager.
+- The custom configuration and the Blueprint made in Apple Business are
+  unused for this Mac; the same `.mobileconfig` uploads to SimpleMDM.
+
 ## Status
 
 - [x] Apple Business Manager application submitted (Kevin, 2026-11-05).
