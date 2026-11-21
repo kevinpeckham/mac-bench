@@ -269,6 +269,12 @@ or on the Mac's screen, **C** is Claude's, over SSH or in this repo.
     First check from the VM, over SSH: a throwaway app generated with
     XcodeGen (Homebrew) built and its unit test passed in the iPhone 17
     simulator, unsigned, in 55 seconds.
+    Signing, first findings (2026-11-21, FINDINGS): `xcodebuild` cannot
+    sign over SSH ("User interaction is not allowed"); inside the
+    logged-in session it reaches the account. The SSH attempt left an
+    Apple Development certificate with no key, to be removed and made
+    again in Xcode's Manage Certificates (**K**). Signing jobs will run
+    through the helper.
 16. **C** Spike, signing and upload (build and simulator tests are
     proven, above); needs the team ID and an app record from Kevin: an archive with automatic, cloud-managed signing
     (`-allowProvisioningUpdates`); an upload to App Store Connect. Find

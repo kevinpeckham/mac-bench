@@ -414,3 +414,24 @@ Fix: none needed; gone after a restart.
   MacStadium doesn't already enrol the machine in its own MDM") and the
   plan went ahead without asking. An open question about who owns a
   rented machine's registration is asked before the plan depends on it.
+
+### `xcodebuild` over SSH cannot sign, and trying leaves a certificate behind (2026-11-21, cloud Mac)
+
+- **The symptom.** An automatically signed `xcodebuild archive` started
+  over SSH failed in four seconds with "User interaction is not
+  allowed". The same command started inside the logged-in session (a
+  one-shot launch agent, `LimitLoadToSessionType` Aqua) got past that and
+  failed with "Your account already has an Apple Development signing
+  certificate for this machine, but its private key is not installed in
+  your keychain."
+- **The cause.** Xcode keeps the account's sign-in and its signing keys
+  in the login keychain, which an SSH session may not use. The SSH
+  attempt got as far as asking Apple for a development certificate, and
+  then could not store its private key: a certificate with no key.
+- **The fix.** Signing jobs run inside the logged-in session, as the
+  Dorico helper does (a launchd agent in the `gui/` domain), never over
+  SSH. The orphaned certificate is removed and made again in Xcode >
+  Settings > Accounts > Manage Certificates, on the Mac's screen.
+- **The rule.** Unsigned builds and simulator tests are fine over SSH
+  (`CODE_SIGNING_ALLOWED=NO`). Anything that signs goes through the
+  helper.
