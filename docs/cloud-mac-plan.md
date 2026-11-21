@@ -259,10 +259,18 @@ or on the Mac's screen, **C** is Claude's, over SSH or in this repo.
 
 ### The iOS app: build, test, sign and upload on mac-bench
 
-15. **K** Sign the machine account in to Xcode on the Mac (Settings >
-    Accounts), over screen sharing.
-16. **C** Spike, on a throwaway app ID: `xcodebuild` build and simulator
-    tests; an archive with automatic, cloud-managed signing
+15. Done (2026-11-21): Xcode 27.2 downloaded from developer.apple.com
+    and installed by hand (it was not in Apple Business's app
+    catalogue), with the iOS 27.2 SDK and simulator; the machine account
+    is signed in under Settings > Accounts; "External Agent Access" set
+    to "While Xcode is Open". `xcode-select` still points at the Command
+    Line Tools (changing it needs root), so jobs set
+    `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
+    First check from the VM, over SSH: a throwaway app generated with
+    XcodeGen (Homebrew) built and its unit test passed in the iPhone 17
+    simulator, unsigned, in 55 seconds.
+16. **C** Spike, signing and upload (build and simulator tests are
+    proven, above); needs the team ID and an app record from Kevin: an archive with automatic, cloud-managed signing
     (`-allowProvisioningUpdates`); an upload to App Store Connect. Find
     out how long Xcode's sign-in lasts unattended, and whether the
     machine account's role is enough. If it is not workable, the
