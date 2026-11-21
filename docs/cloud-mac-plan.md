@@ -51,11 +51,10 @@ This replaces "no Apple ID is signed in" and the SimpleMDM choice below.
   developer team with a limited role. The machine account is never an
   administrator or the Account Holder.
 - **The Apple Developer Program membership already exists,** under
-  Kevin's personal Apple ID: no second enrolment. The managed accounts
-  are invited to its team. That needs an organisation membership (an
-  individual one gives invited users App Store Connect only, no
-  certificates), so an individual membership is first converted to the
-  organisation, whose legal name the App Store then shows as the seller.
+  Kevin's personal Apple ID, and it is an **organisation** membership
+  (confirmed 2026-11-21): no second enrolment and nothing to convert.
+  The managed accounts are invited to its team, where a role can carry
+  access to certificates (an individual membership could not give that).
   The Account Holder role can stay on the personal Apple ID; moving it to
   Kevin's managed account is optional and can wait.
 - **mac-bench builds, tests, signs and uploads the iOS app** (Kevin,
@@ -168,14 +167,8 @@ or on the Mac's screen, **C** is Claude's, over SSH or in this repo.
    included.
 2. **K** Apple Business > Settings > Access Management > Apple Services
    > Developer: allow the Apple Developer Program.
-3. **K** The existing Developer Program membership (under the personal
-   Apple ID): look at developer.apple.com/account > Membership details
-   for its type. **Organisation:** nothing to do here. **Individual:**
-   convert it to the organisation (Membership > update an individual
-   membership to an organisation, or Apple Developer Support), with the
-   legal entity and D-U-N-S number exactly as on the D-U-N-S record;
-   Apple's check takes days to weeks, and the seller name becomes the
-   legal entity's.
+3. Done (2026-11-21): the existing Developer Program membership, under
+   the personal Apple ID, is an organisation's. Nothing to convert.
 4. **K** Create the machine's managed account on `lj.dev` (a mailbox or
    alias first), with a plain staff role and a trusted phone number
    Kevin controls for its sign-in codes. Limit it to managed devices
