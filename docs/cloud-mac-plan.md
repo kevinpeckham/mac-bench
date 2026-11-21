@@ -275,6 +275,20 @@ or on the Mac's screen, **C** is Claude's, over SSH or in this repo.
     Apple Development certificate with no key, to be removed and made
     again in Xcode's Manage Certificates (**K**). Signing jobs will run
     through the helper.
+    **It works end to end (2026-11-21).** The first real app (a private
+    repository, an XcodeGen project) was archived, exported and uploaded
+    to App Store Connect from the VM, each signed step run inside the
+    Mac's logged-in session by a one-shot launch agent. The archive is
+    signed with the machine account's Apple Development certificate; the
+    export is signed by Apple's cloud-managed "Apple Distribution"
+    certificate (Xcode's remote signing), so no distribution key is on
+    the Mac. What it took beyond the plan: Kevin registers the app's
+    bundle ID (a Developer may not: "You aren't authorized to register a
+    new AppID") and creates the app record; the machine account must be
+    given access to that app under Users and Access, or Xcode's lookup of
+    the app comes back empty ("Error Downloading App Information"); the
+    team ID goes on the command line (`DEVELOPMENT_TEAM=…`), not in the
+    repository.
 16. **C** Spike, signing and upload (build and simulator tests are
     proven, above); needs the team ID and an app record from Kevin: an archive with automatic, cloud-managed signing
     (`-allowProvisioningUpdates`); an upload to App Store Connect. Find
@@ -283,7 +297,7 @@ or on the Mac's screen, **C** is Claude's, over SSH or in this repo.
     fallback is an Admin App Store Connect API key from 1Password
     (`-authenticationKeyPath`, `-authenticationKeyID`,
     `-authenticationKeyIssuerID`), which Kevin creates.
-17. **C** Then design and build the job as the Dorico checks were: a
+17. **C** Next: design and build the job as the Dorico checks were: a
     `mac-bench` command the VM calls, one job at a time, logs back to
     the VM, nothing secret in this repo.
 
