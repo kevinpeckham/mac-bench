@@ -175,10 +175,14 @@ or on the Mac's screen, **C** is Claude's, over SSH or in this repo.
    only and turn off the services it does not need (Access Management).
 5. **K** In App Store Connect > Users and Access (the membership being
    an organisation's): invite Kevin's managed account as Admin, and the
-   machine account with a limited role (Developer, or App Manager if
-   uploads need it), with access to Certificates, Identifiers & Profiles
-   and "Access to Cloud Managed Distribution Certificate". Each accepts
-   the invitation from its `lj.dev` mailbox.
+   machine account as **Developer**, with "Access to Certificates,
+   Identifiers & Profiles" and then "Access to Cloud Managed
+   Distribution Certificate" (the second can be ticked only once the
+   first is; seen in the console 2026-11-21). "Access to Cloud Managed
+   Developer ID Certificate" stays grey for a Developer and is not
+   needed: Developer ID is for Mac software sold outside the App Store.
+   The machine account does not create app records: Kevin creates the
+   app once. Each accepts the invitation from its `lj.dev` mailbox.
 
 ### Enrolling the Mac
 
