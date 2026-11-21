@@ -392,3 +392,46 @@ the account's current password, so auto-login unlocks it.
 
 Symptom: right after the Local Network prompts for Dorico's components.
 Fix: none needed; gone after a restart.
+
+### Apple Business refused to enrol the MacStadium Mac (2026-11-21, cloud Mac)
+
+- **The symptom.** Signing a Managed Apple Account in on the cloud Mac
+  (System Settings > General > Device Management > Sign In to Work or
+  School Account) ended with "Enrollment Failed: This device is assigned
+  to a device management service other than Apple Business." Before and
+  after, `profiles status -type enrollment` said "Enrolled via DEP: No,
+  MDM enrollment: No".
+- **The cause.** MacStadium owns the Apple Business Manager registration
+  of its hardware (its docs: "MacStadium owns the ABM registration for
+  your hardware"), so the Mac's serial number is assigned in another
+  organisation's account. Apple Business's built-in device management
+  only takes a Mac that is unassigned or its own. Not being enrolled says
+  nothing about being assigned, and no command without root shows it.
+- **The fix.** None on our side. The managed account still signs in to
+  Xcode, which is not enrolment. Device management for this Mac needs an
+  external MDM, by its enrolment link or by MacStadium's token exchange.
+- **The rule.** The research had this down as unverified ("confirm that
+  MacStadium doesn't already enrol the machine in its own MDM") and the
+  plan went ahead without asking. An open question about who owns a
+  rented machine's registration is asked before the plan depends on it.
+
+### `xcodebuild` over SSH cannot sign, and trying leaves a certificate behind (2026-11-21, cloud Mac)
+
+- **The symptom.** An automatically signed `xcodebuild archive` started
+  over SSH failed in four seconds with "User interaction is not
+  allowed". The same command started inside the logged-in session (a
+  one-shot launch agent, `LimitLoadToSessionType` Aqua) got past that and
+  failed with "Your account already has an Apple Development signing
+  certificate for this machine, but its private key is not installed in
+  your keychain."
+- **The cause.** Xcode keeps the account's sign-in and its signing keys
+  in the login keychain, which an SSH session may not use. The SSH
+  attempt got as far as asking Apple for a development certificate, and
+  then could not store its private key: a certificate with no key.
+- **The fix.** Signing jobs run inside the logged-in session, as the
+  Dorico helper does (a launchd agent in the `gui/` domain), never over
+  SSH. The orphaned certificate is removed and made again in Xcode >
+  Settings > Accounts > Manage Certificates, on the Mac's screen.
+- **The rule.** Unsigned builds and simulator tests are fine over SSH
+  (`CODE_SIGNING_ALLOWED=NO`). Anything that signs goes through the
+  helper.
