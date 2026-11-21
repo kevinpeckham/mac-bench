@@ -40,8 +40,11 @@ This replaces "no Apple ID is signed in" and the SimpleMDM choice below.
   `lightningjar.com` has 18 personal Apple IDs on it, and Domain Capture
   (which can't be undone) would make each of them move or rename;
   `lj.dev` has none and has working mail (Proton). `lj.dev`'s DNS is at
-  Vercel; only `bench.lj.dev` is at DigitalOcean. Never turn on Domain
-  Capture for either domain.
+  Vercel; only `bench.lj.dev` is at DigitalOcean. Domain Capture is on
+  for `lj.dev` (Kevin, 2026-11-20; it cannot be undone): the domain is
+  locked, so no new personal Apple ID can be made on it, and any that
+  existed had 30 days to move or rename. Never turn it on for
+  `lightningjar.com`.
 - **Two managed accounts.** Kevin's own is the organisation's
   administrator and the Apple Developer Program's Account Holder. A
   second, for the machine, is the Apple ID on mac-bench and joins the
