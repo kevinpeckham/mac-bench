@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.applicationaccess</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PayloadIdentifier</key>
+			<string>dev.lj.mac-bench.screen-capture.restrictions</string>
+			<key>PayloadUUID</key>
+			<string>1C8F2241-6E5D-470D-B83A-1F96B37D85B4</string>
+			<key>PayloadDisplayName</key>
+			<string>Screen recording: no monthly prompt</string>
+			<key>forceBypassScreenCaptureAlert</key>
+			<true/>
+		</dict>
+	</array>
+	<key>PayloadDisplayName</key>
+	<string>mac-bench: screen recording without the monthly prompt</string>
+	<key>PayloadDescription</key>
+	<string>Stops macOS asking each month whether apps already allowed to record the screen may keep doing so. Nothing else is set.</string>
+	<key>PayloadIdentifier</key>
+	<string>dev.lj.mac-bench.screen-capture</string>
+	<key>PayloadOrganization</key>
+	<string>Lightning Jar</string>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>CEEBC022-58EB-4574-B872-28ECEEFC2583</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

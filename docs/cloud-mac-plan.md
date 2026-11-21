@@ -190,14 +190,22 @@ or on the Mac's screen, **C** is Claude's, over SSH or in this repo.
    Enrollment: choose "Enroll as an organization-owned device" for Mac.
 7. **K** Make a Blueprint for the machine account: a custom
    configuration with Restrictions (`com.apple.applicationaccess`)
-   `forceBypassScreenCaptureAlert = true` (**C** writes the
-   `.mobileconfig`), and the apps below.
-8. **K** On the Mac, over screen sharing: sign the machine account in
-   (System Settings; decline every offer to save a password, and leave
-   the iCloud services off) and approve the enrolment.
+   `forceBypassScreenCaptureAlert = true`
+   (`profiles/screen-capture.mobileconfig` in this repo), and the apps
+   below. Nothing else in the Blueprint: no FileVault, passcode or
+   software-update configuration, which would end auto-login or move
+   macOS under Dorico.
+8. **K** On the Mac, over screen sharing: System Settings > General >
+   Device Management > "Sign In to Work or School Account", with the
+   machine account; approve the enrolment. Decline every offer to save a
+   password, and leave the iCloud services off. Do not restart until
+   step 9 has passed.
 9. **C** Check over SSH: `profiles status -type enrollment` shows the
    enrolment, the Mac is supervised, the custom configuration is
-   installed, and the monthly screen-recording prompt has stopped.
+   installed, FileVault is still off (`fdesetup status`), auto-login and
+   the helper still work, and the monthly screen-recording prompt has
+   stopped. Before enrolment (2026-11-21): not enrolled, no Apple
+   account signed in, no Xcode (Command Line Tools only).
 10. To confirm in the console, not yet known: that a custom
     configuration reaches a hand-enrolled Mac through a user Blueprint,
     and whether the reserved domain would have worked for enrolment
