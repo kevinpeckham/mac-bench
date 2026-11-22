@@ -112,3 +112,13 @@ musescore`, 2026-11-05): `mscore` converts headless, after
 status: `docs/cloud-mac-plan.md`. Kevin's MacBook
 (`kevins-macbook-pro-2021`) also still runs the helper: point
 `MAC_BENCH_URL` at it to use it.
+
+## Agent tooling
+
+What an agent gets in this repository is declared here, not in anyone's
+personal Claude Code settings:
+
+- `.mcp.json`: MCP servers: `varlock-docs-mcp` (Varlock's documentation: read it before changing `.env.schema` or how the environment is loaded)
+- `.claude/settings.json`: the approval of those servers
+
+Add or remove a tool by editing these files in a pull request.
